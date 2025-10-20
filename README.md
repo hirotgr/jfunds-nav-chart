@@ -1,4 +1,12 @@
+
+# GitHub Pages
+
+* https://hirotgr.github.io/jfunds-nav-chart/jfunds-nav-chart.html
+  * [サンプルCSVファイル](https://raw.githubusercontent.com/hirotgr/jfunds-nav-chart/main/sample-csv.zip)
+
 # ダウンロード
+
+このツールはローカルにダウンロードして使用可能することができます。
 
 * [jfunds-nav-chart.zip](https://raw.githubusercontent.com/hirotgr/jfunds-nav-chart/main/jfunds-nav-chart.zip)
 
