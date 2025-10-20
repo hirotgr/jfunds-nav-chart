@@ -1,0 +1,1288 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>投資信託CSV比較</title>
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root{ --bg:#0b0f14; --panel:#111720; --text:#e8eef6; --muted:#9fb0c3; --accent:#6aa0ff; }
+    body{margin:0;padding:16px;background:var(--bg);color:var(--text);font-family:'Noto Sans JP',system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+    .wrap{max-width:1100px;margin:0 auto}
+    .panel{background:var(--panel);border-radius:12px;padding:12px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+    #chart{
+      height:600px;
+      min-height:260px;
+      width:100%;
+      min-width:320px;
+      resize:both;             /* 右下の“つまみ”で縦横リサイズ */
+      overflow:hidden;         /* Blink/WebKitでリサイズつまみを表示するため可視以外にする */
+      padding-bottom:32px;     /* X軸ラベルが完全に見えるよう余白を拡大 */
+      box-sizing:border-box;
+      position:relative;       /* Lightweight Charts™︎の内部要素の基準 */
+    }
+    /* 軸ラベルがチャート内でクリップされないよう内部ラッパーのオーバーフローを可視にする */
+    #chart > div { overflow: visible !important; }
+    .row{display:grid;grid-template-columns:1.1fr .9fr;gap:12px;align-items:start}
+    @media (max-width:900px){.row{grid-template-columns:1fr}}
+    .drop{border:1.5px dashed #2a3443;border-radius:10px;padding:10px 12px;text-align:center;background:#0f141c;cursor:pointer;display:block;transition:box-shadow .15s ease, border-color .15s ease; font-size:13px}
+    .drop.dragover{ box-shadow:0 0 0 2px rgba(106,160,255,.35) inset; border-color:#6aa0ff; }
+    .controls{display:flex;flex-direction:column;gap:8px;align-items:flex-start;flex-wrap:nowrap;margin-top:8px}
+    .ctrl-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .btn{
+      cursor:pointer;
+      border:1px solid #2a3443;
+      background:#152033;
+      color:var(--text);
+      border-radius:8px;
+      padding:6px 12px;
+      font-size:13px;
+    }
+    #file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;z-index:-1;left:-9999px;top:auto}
+    /* input[type=date] removed */
+    input.datech{
+      padding:8px 10px;border-radius:10px;border:1px solid #2a3443;
+      background:#0f141c;color:var(--text);font-size:13px;text-align:center;
+    }
+    .status{
+      font-size:12px;
+      color:var(--muted);
+      white-space:pre-wrap;
+      min-height:72px;
+      height:120px;           /* 固定の縦サイズを持たせて常にスクロール可能に (PNG保存ボタン行と同程度) */
+      overflow-y:auto;
+      scrollbar-width:thin;   /* Firefox: スクロールバー可視化 */
+      scrollbar-color:#2a3443 #0f141c;
+    }
+    /* Chrome/Edge/Safari: ステータス欄のスクロールバーを明示表示（黒系） */
+    #status::-webkit-scrollbar{ width:10px; height:10px }
+    #status::-webkit-scrollbar-track{ background:#0f141c }
+    #status::-webkit-scrollbar-thumb{ background:#2a3443; border-radius:8px; border:2px solid #0f141c }
+    /* .status-panel{min-height:96px} removed */
+    h1{font-size:18px;margin:0 0 10px}
+    .hint{font-size:11px;color:var(--muted);margin-top:4px}
+    .legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--text);margin:0 0 12px}
+    .legend-item{display:flex;gap:8px;align-items:center;background:#0f141c;border:1px solid #2a3443;border-radius:8px;padding:6px 8px}
+    .legend-item .swatch{width:12px;height:12px;border-radius:3px;display:inline-block}
+    .legend-item .name{opacity:.95}
+    .legend-item .del{
+      margin-left:6px;
+      border:1px solid #2a3443;
+      background:#152033;
+      color:#cbd5e1;
+      border-radius:6px;
+      padding:2px 6px;
+      font-size:12px;
+      line-height:1.2;
+      cursor:pointer;
+    }
+    .legend-item .del:hover{
+      background:#1b2738;
+      border-color:#3a4960;
+    }
+ /* 凡例：非表示状態の見た目 */
+ .legend-item.off{ opacity:.6 }
+ .legend-item.off .name{ text-decoration: line-through }
+ .legend-item{ user-select:none }
+  /* === Help Modal === */
+  .help-btn{ margin-left:auto; border:1px solid #2a3443; background:#152033; color:var(--text); border-radius:8px; padding:6px 10px; font-size:13px; cursor:pointer; }
+  .help-btn:hover{ background:#1b2738; border-color:#3a4960; }
+  .modal{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.6); z-index:9999; }
+  .modal.open{ display:flex; }
+  .modal-panel{ width:min(980px, 92vw); height:min(86vh, 900px); background:var(--panel); border:1px solid #2a3443; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.45); display:flex; flex-direction:column; overflow:hidden; }
+  .modal-head{ display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid #2a3443; background:#0f141c; }
+  .modal-head .title{ font-weight:600; font-size:14px; color:var(--text); }
+  .modal-close{ margin-left:auto; border:1px solid #2a3443; background:#152033; color:#cbd5e1; border-radius:8px; padding:4px 10px; font-size:12px; cursor:pointer; }
+  .modal-close:hover{ background:#1b2738; border-color:#3a4960; }
+  .modal-body{ padding:14px; overflow:auto; color:var(--text); }
+  .modal-body h1,.modal-body h2,.modal-body h3{ margin:14px 0 8px; }
+  .modal-body code, .modal-body pre{ background:#0f141c; border:1px solid #2a3443; color:#cbd5e1; border-radius:6px; }
+  .modal-body pre{ padding:10px; overflow:auto; }
+  .modal-body table{ width:100%; border-collapse:collapse; margin:10px 0; }
+  .modal-body th,.modal-body td{ border:1px solid #2a3443; padding:6px 8px; text-align:left; }
+  .modal-body a{ color:#6aa0ff; text-decoration:none; }
+  .modal-body ul{ margin:6px 0 6px 20px; }
+  .modal-body li{ margin:4px 0; }
+  /* Force left alignment inside help modal (footer is centered) */
+  .modal{ text-align:left; }
+  .modal-body{ text-align:left; }
+  .modal-body ul, .modal-body ol{ text-align:left; }
+
+  /* === Custom Crosshair Tooltip === */
+  .lwc-tooltip{ position:absolute; display:none; pointer-events:none; z-index:50; background:#0f141c; color:var(--text); border:1px solid #2a3443; border-radius:8px; padding:6px 8px; font-size:12px; box-shadow:0 6px 18px rgba(0,0,0,.35); min-width:80px; }
+  .lwc-tooltip .row{ display:flex; align-items:center; gap:8px; white-space:nowrap; }
+  .lwc-tooltip .sw{ width:10px; height:10px; border-radius:3px; display:inline-block; }
+  .lwc-tooltip .val{ font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div style="font-size:18px;font-weight:600;">投資信託CSV比較</div>
+      <a href="https://jp.tradingview.com/lightweight-charts/" target="_blank" style="font-size:14px;background:#152033;color:#9fb0c3;padding:2px 8px;border-radius:999px;text-decoration:none;display:inline-block;">powered by Lightweight Charts™︎ (©TradingView)</a>
+      <button id="helpBtn" class="help-btn" title="使い方を開く">ヘルプ</button>
+    </header>
+    <div class="panel" style="margin-bottom:12px">
+      <div class="row">
+        <!-- 左：読み込みエリア（小型化） -->
+        <div>
+          <label for="file" id="drop" class="drop" tabindex="0">
+            ここをクリックしてCSVを選択 (最大10個)<br><span class="hint">またはここにドラッグ＆ドロップ</span>
+          </label>
+          <input id="file" type="file" accept=".csv,text/csv" multiple>
+          <div class="controls">
+            <div><label class="hint">表示設定</label></div>
+            <!-- 上段: 正規化基準日 + 入力ボックス + 正規化 -->
+            <div class="ctrl-row">
+              <label style="margin-right:8px">正規化基準日</label>
+              <input id="baseY" class="datech" type="text" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="YYYY" style="width:64px;margin-right:4px">
+              <input id="baseM" class="datech" type="text" inputmode="numeric" pattern="\d{1,2}" maxlength="2" placeholder="MM" style="width:40px;margin-right:4px">
+              <input id="baseD" class="datech" type="text" inputmode="numeric" pattern="\d{1,2}" maxlength="2" placeholder="DD" style="width:40px;margin-right:10px">
+              <label style="margin-right:10px"><input id="normalize" type="checkbox"> 正規化</label>
+            </div>
+            <!-- 下段: 対数チャート + 再描画 + PNG保存 -->
+            <div class="ctrl-row">
+              <label style="margin-right:10px"><input id="logScale" type="checkbox"> 対数チャート</label>
+              <button id="apply" class="btn">再描画</button>
+              <button id="savePng" class="btn">PNG保存</button>
+            </div>
+          </div>
+        </div>
+        <!-- 右：ステータス -->
+        <div class="panel status-panel">
+          <div style="font-size:13px;margin-bottom:4px">ステータス</div>
+          <div id="status" class="status">待機中</div>
+        </div>
+      </div>
+    </div>
+    <div id="legend" class="legend"></div>
+    <div id="chart" class="panel"></div>
+  </div>
+  <script>
+    const $ = (s)=>document.querySelector(s);
+    const statusEl = $('#status');
+    function setStatus(msg){ statusEl.textContent = msg; console.log('[STATUS]', msg); }
+    function appendStatus(msg){
+      if (!statusEl) return;
+      statusEl.textContent = (statusEl.textContent ? statusEl.textContent + '\n' : '') + msg;
+      statusEl.scrollTop = statusEl.scrollHeight; // 末尾へ自動スクロール
+      console.log('[STATUS+]', msg);
+    }
+
+    function escapeHTML(str){
+      return String(str)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#39;');
+    }
+
+    const legendEl = $('#legend');
+    function updateLegendAll(){
+      if (!legendEl) return;
+      // 既存 store 内に .csv が残っている場合もここで正規化
+      for (const s of seriesStore) s.label = normalizeLabel(s.label);
+      if (!seriesStore.length) { legendEl.innerHTML = ''; return; }
+      const html = seriesStore.map((s, i) =>
+      `<div class="legend-item${s.hidden ? ' off' : ''}" data-idx="${i}" title="クリックで表示/非表示を切替">
+        <span class="swatch" style="background:${s.color}"></span>
+           <span class="name">${escapeHTML(s.label)}</span>
+           <button class="del" title="この系列を削除" data-idx="${i}">削除</button>
+         </div>`
+      ).join('');
+      legendEl.innerHTML = html;
+    }
+
+    const drop = $('#drop');
+    const fileInput = $('#file');
+    const normalizeEl = $('#normalize');
+    const baseYearEl = $('#baseY');
+    const baseMonthEl = $('#baseM');
+    const baseDayEl = $('#baseD');
+    const applyBtn = $('#apply');
+    const logScaleEl = $('#logScale');
+    const savePngBtn = $('#savePng');
+
+
+    // 凡例クリック：削除 or 可視トグル
+    if (legendEl) {
+      legendEl.addEventListener('click', (e) => {
+        // 削除ボタンが押された場合
+        const delBtn = e.target.closest('.del');
+        if (delBtn) {
+          const idx = Number(delBtn.getAttribute('data-idx'));
+          if (!Number.isInteger(idx)) return;
+          const label = seriesStore[idx]?.label;
+          removeSeriesAt(idx);
+          if (label) {
+            appendStatus(`削除: ${label}`);
+            appendStatus('-----');
+          }
+          return;
+        }
+        // それ以外は表示/非表示トグル
+        const item = e.target.closest('.legend-item');
+        if (!item) return;
+        const idx = Number(item.getAttribute('data-idx'));
+        if (!Number.isInteger(idx)) return;
+        const s = seriesStore[idx];
+        if (!s || !s.series) return;
+        s.hidden = !s.hidden;
+        try { s.series.applyOptions({ visible: !s.hidden }); } catch(e){}
+        updateLegendAll();
+        chart.timeScale().fitContent();
+        updateScale();
+        appendStatus(`${s.hidden ? '非表示' : '表示'}: ${s.label}`);
+      });
+    }
+
+    function removeSeriesAt(index){
+      if (index < 0 || index >= seriesStore.length) return;
+      const s = seriesStore[index];
+      try { if (s.series) chart.removeSeries(s.series); } catch(e) {}
+      // メモリ上の参照を解放（GCの促進）
+      if (s) {
+        s.raw = [];
+        s.norm = [];
+        s.series = null;
+        s.hidden = undefined;
+      }
+      seriesStore.splice(index, 1);
+      updateLegendAll();
+      if (seriesStore.length) {
+        recomputeAndRenderAll();
+      } else {
+        appendStatus('すべての系列が削除されました。');
+      }
+    }
+
+    // ===== Multi-series state =====
+    const PALETTE = [
+      '#6aa0ff', // blue
+      '#ffa600', // orange
+      '#36cfc9', // teal
+      '#e66abd', // magenta
+      '#8bc34a', // green
+      '#ff6e6e', // red
+      '#b58cff', // purple
+      '#ffd166', // amber
+      '#00c9a7', // aqua
+      '#ff8ec9', // pink
+    ];
+    const MAX_SERIES = 10;
+    /** @type {{label:string,color:string,series:any,hidden?:boolean,raw:Array<{time:number,value:number}>, norm:Array<{time:number,value:number}>}[]} */
+    const seriesStore = [];
+
+    function getBaseDateStr(){
+      const y = (baseYearEl?.value || '').replace(/\D/g,'').slice(0,4);
+      const m = (baseMonthEl?.value || '').replace(/\D/g,'').slice(0,2);
+      const d = (baseDayEl?.value || '').replace(/\D/g,'').slice(0,2);
+      if (y.length !== 4 || m.length === 0 || d.length === 0) return '';
+      const mm = m.padStart(2,'0');
+      const dd = d.padStart(2,'0');
+      return `${y}-${mm}-${dd}`;
+    }
+
+    function parseYMDStrictToUTCSeconds(y, m, d){
+      const yi = parseInt(y, 10), mi = parseInt(m, 10), di = parseInt(d, 10);
+      if (!Number.isInteger(yi) || String(y).length !== 4) return null;
+      if (!(mi >= 1 && mi <= 12)) return null;
+      if (!(di >= 1 && di <= 31)) return null;
+      const dt = new Date(Date.UTC(yi, mi - 1, di, 0, 0, 0));
+      if (dt.getUTCFullYear() !== yi || (dt.getUTCMonth() + 1) !== mi || dt.getUTCDate() !== di) return null; // 存在しない日付を除外（例: 2021-02-30）
+      return Math.floor(dt.getTime() / 1000);
+    }
+    function validateBaseDateWithinData(baseDateStr, data){
+      if (!baseDateStr) return { ok: true, time: null }; // 指定なしはOK（最古日を基準）
+      const m = baseDateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return { ok: false, msg: '正しい日付形式で入力してください (YYYY-MM-DD)' };
+      const t = parseYMDStrictToUTCSeconds(m[1], m[2], m[3]);
+      if (t == null) return { ok: false, msg: '存在しない年月日です（例: 月=13 や 日=33 は無効）' };
+      if (!data || !data.length) return { ok: true, time: t };
+      const first = data[0].time, last = data[data.length - 1].time;
+      if (t < first || t > last) return { ok: false, msg: 'その日付のデータは存在しません。' }; // 未来/過去（範囲外）を弾く
+      return { ok: true, time: t };
+    }
+
+    const chartContainer = document.getElementById('chart');
+    const chart = LightweightCharts.createChart(chartContainer, {
+      layout: { background: { type:'solid', color:'#111720' }, textColor:'#e8eef6', fontFamily:'Noto Sans JP, system-ui,-apple-system, Segoe UI, Roboto, Helvetica, Arial' },
+      rightPriceScale: { borderVisible:false },
+      timeScale: { borderVisible:false, timeVisible:true, secondsVisible:false, rightOffset:8, fixLeftEdge:true, fixRightEdge:true, tickMarkFormatter: (t) => { if (t && typeof t === 'object' && 'year' in t) { const y=t.year; const m=String(t.month).padStart(2,'0'); const d=String(t.day).padStart(2,'0'); return `${y}/${m}/${d}`; } const dt=new Date(t*1000); const y=dt.getUTCFullYear(); const m=String(dt.getUTCMonth()+1).padStart(2,'0'); const d=String(dt.getUTCDate()).padStart(2,'0'); return `${y}/${m}/${d}`; }, minimumHeight:40 },
+      grid: { horzLines:{ visible:true, color:'rgba(255,255,255,0.05)' }, vertLines:{ visible:false } },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Magnet },
+      localization: {
+        priceFormatter: (p)=>Number(p).toLocaleString('ja-JP'),
+        timeFormatter: (t)=>{
+          if (typeof t === 'number') {
+            const d = new Date(t*1000);
+            return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+          }
+          if (t && typeof t === 'object' && 'year' in t) {
+            const y = t.year, m = String(t.month).padStart(2,'0'), d = String(t.day).padStart(2,'0');
+            return `${y}-${m}-${d}`;
+          }
+          return String(t);
+        }
+      },
+      width: chartContainer.clientWidth, height: chartContainer.clientHeight,
+    });
+    // === Create tooltip container ===
+    const tip = document.createElement('div');
+    tip.className = 'lwc-tooltip';
+    chartContainer.appendChild(tip);
+
+    function fmtPrice(v){
+      try { return Number(v).toLocaleString('ja-JP'); } catch(_) { return String(v); }
+    }
+    function showTip(x, y, html){
+      tip.innerHTML = html;
+      tip.style.display = 'block';
+      // 初期配置
+      let left = x + 12;
+      let top  = y + 12;
+      // はみ出し防止（コンテナ内基準）
+      const cw = chartContainer.clientWidth;
+      const ch = chartContainer.clientHeight;
+      // 一旦表示してサイズ取得
+      const tw = tip.offsetWidth || 160;
+      const th = tip.offsetHeight || 40;
+      if (left + tw > cw - 6) left = Math.max(6, cw - tw - 6);
+      if (top + th > ch - 6)   top  = Math.max(6, ch - th - 6);
+      tip.style.left = left + 'px';
+      tip.style.top  = top  + 'px';
+    }
+    function hideTip(){ tip.style.display = 'none'; }
+
+
+new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, height: chartContainer.clientHeight })).observe(chartContainer);
+
+  // === Disable right-click context menu on chart area ===
+  (function(){
+    let cmWarned = false;
+    const handler = (e) => {
+      // 右クリックメニューを無効化
+      e.preventDefault();
+      e.stopPropagation();
+      if (!cmWarned) {
+        appendStatus('右クリックメニューは無効です。画像保存は「PNG保存」ボタンをご利用ください。');
+        cmWarned = true;
+      }
+      return false;
+    };
+    // チャートコンテナ配下での右クリックを抑止（キャプチャ段階で拾う）
+    chartContainer.addEventListener('contextmenu', handler, true);
+  })();
+
+    function saveChartAsPNG(){
+      try{
+        // 1) チャートのスクリーンショット（系列・軸・グリッドを含む）
+        const baseCanvas = chart.takeScreenshot(true, false); // addTopLayer=true, includeCrosshair=false
+
+        // 2) 凡例（HTML）は含まれないため、合成用キャンバスに描き足す
+        const out = document.createElement('canvas');
+        out.width  = baseCanvas.width;
+        out.height = baseCanvas.height;
+        const ctx = out.getContext('2d');
+
+        // チャート画像を貼る
+        ctx.drawImage(baseCanvas, 0, 0);
+        // 凡例を左上に描画（可視シリーズがあれば）
+        if (seriesStore && seriesStore.some(ss => !ss.hidden)){
+          const pad = 12;
+          const sw = 12;           // 色スウォッチのサイズ
+          const gap = 8;           // スウォッチとテキストの間隔
+          const lineH = 18;        // 行の高さ
+          ctx.font = '12px "Noto Sans JP", sans-serif';
+          const vis = seriesStore.filter(ss => !ss.hidden);
+          // テキスト幅の最大値を測る
+          let maxTextW = 0;
+          for (const s of vis){
+            const w = ctx.measureText(String(s.label)).width;
+            if (w > maxTextW) maxTextW = w;
+          }
+          const boxW = pad*2 + (sw + gap) + Math.ceil(maxTextW);
+          const boxH = pad*2 + lineH * vis.length;
+
+
+          // 背景ボックス（半透明ダーク）
+          ctx.fillStyle = 'rgba(15,20,28,0.85)';
+          ctx.fillRect(pad-6, pad-6, boxW+12, boxH+12);
+
+          // 罫線
+          ctx.strokeStyle = 'rgba(42,52,67,0.9)';
+          ctx.strokeRect(pad-6+0.5, pad-6+0.5, boxW+12-1, boxH+12-1);
+
+          // 各行（スウォッチ＋ラベル）
+          for (let i=0;i<vis.length;i++){
+            const s = vis[i];
+            const y0 = pad + i*lineH;
+
+            // スウォッチ
+            ctx.fillStyle = s.color || '#6aa0ff';
+            ctx.fillRect(pad, y0+3, sw, sw);
+
+            // テキスト
+            ctx.fillStyle = '#cbd5e1';
+            ctx.fillText(String(s.label), pad + sw + gap, y0 + 14);
+          }
+        }
+
+        // 3) ダウンロード
+        out.toBlob((blob)=>{
+          if (!blob) return;
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'chart.png';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(()=>{ URL.revokeObjectURL(url); document.body.removeChild(a); }, 500);
+        }, 'image/png');
+      }catch(e){
+        alert('画像の保存中にエラーが発生しました: ' + (e.message || e));
+      }
+    }
+
+    // ラベル正規化（末尾の .csv / .CSV を除去）
+    function normalizeLabel(name){
+      return String(name || '').replace(/\.csv$/i, '').trim();
+    }
+
+    // ----- labeling from text (1st line if header is not at line 1; else filename) -----
+    function labelFromTextAndSource(text, sourceLabel){
+      const textNorm = normalizeEOLKeepCRLF(text);
+      const lines = textNorm.split(/\r\n|\n/).filter(l => l.trim().length > 0);
+      const { headerIndex: hi } = pickHeaderAndDelimiter(lines);
+      if (hi > 0) {
+        return normalizeLabel(toHalfWidth(lines[0] || '').replace(/^\ufeff/, '').trim());
+      }
+      // fallback to filename (strip .csv/.CSV)
+      const m = String(sourceLabel||'').match(/^file:(.+)$/);
+      let name = m ? m[1] : (sourceLabel || 'series');
+      return normalizeLabel(name);
+    }
+
+    function findSeriesIndexByLabel(label){
+      const key = normalizeLabel(label);
+      return seriesStore.findIndex(s => normalizeLabel(s.label) === key);
+    }
+
+    function allocateColor(keepIndex){
+      // keep existing color if replacing
+      if (typeof keepIndex === 'number' && keepIndex >= 0) return seriesStore[keepIndex].color;
+      // pick first unused palette color
+      const used = new Set(seriesStore.map(s => s.color));
+      for (const c of PALETTE) if (!used.has(c)) return c;
+      // fallback (should not happen within MAX_SERIES)
+      return PALETTE[0];
+    }
+
+    function ensureSeriesObjectAt(index, color){
+      const hidden = !!seriesStore[index].hidden;
+      if (seriesStore[index].series) {
+        seriesStore[index].series.applyOptions({ color, visible: !hidden });
+        return;
+      }
+      seriesStore[index].series = chart.addLineSeries({
+        color,
+        visible: !hidden,
+        priceFormat:{ type:'price', minMove:0.01, precision:2 },
+        lineWidth:2
+      });
+    }
+
+    function computeCommonBaselineTime(){
+      // If normalize checkbox is off, no baseline needed
+      if (!normalizeEl.checked) return null;
+      const baseStr = getBaseDateStr();
+      if (baseStr) {
+        const m = baseStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) { alert('正しい日付形式で入力してください (YYYY-MM-DD)'); return 'ABORT'; }
+        const t = parseYMDStrictToUTCSeconds(m[1], m[2], m[3]);
+        if (t == null) { alert('存在しない年月日です（例: 月=13 や 日=33 は無効）'); return 'ABORT'; }
+        // require exact presence in all series
+        const missing = seriesStore.filter(s => !s.raw.find(d => d.time === t)).map(s => s.label);
+        if (missing.length){
+          alert('以下のシリーズで基準日のデータがありません:\n- ' + missing.join('\n- '));
+          return 'ABORT';
+        }
+        return t;
+      }
+      // baseStr is empty: use "oldest date common to all series"
+      if (!seriesStore.length) return null;
+      // Build sets for each series then intersect
+      const sets = seriesStore.map(s => new Set(s.raw.map(d => d.time)));
+      let intersection = null;
+      for (const st of sets){
+        if (!intersection) intersection = new Set(st);
+        else {
+          const next = new Set();
+          for (const v of intersection) if (st.has(v)) next.add(v);
+          intersection = next;
+        }
+      }
+      if (!intersection || intersection.size === 0) {
+        alert('全てのシリーズに共通する日付がありません（基準日が決められません）。');
+        return 'ABORT';
+      }
+      // pick the minimum timestamp in the intersection
+      let min = Infinity;
+      for (const v of intersection) if (v < min) min = v;
+      return isFinite(min) ? min : 'ABORT';
+    }
+
+    // === 追加: 全シリーズ共通の最古日のタイムスタンプを求める関数 ===
+    function computeOldestCommonTimestamp(){
+      if (!seriesStore.length) return null;
+      const sets = seriesStore.map(s => new Set(s.raw.map(d => d.time)));
+      let intersection = null;
+      for (const st of sets){
+        if (!intersection) intersection = new Set(st);
+        else {
+          const next = new Set();
+          for (const v of intersection) if (st.has(v)) next.add(v);
+          intersection = next;
+        }
+      }
+      if (!intersection || intersection.size === 0) return null;
+      let min = Infinity;
+      for (const v of intersection) if (v < min) min = v;
+      return isFinite(min) ? min : null;
+    }
+    // === 追加: タイムスタンプから基準日入力欄を更新する関数 ===
+    function setBaseDateInputsFromTs(ts){
+      if (!ts && ts !== 0) return;
+      const d = new Date(ts * 1000);
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2,'0');
+      const dd = String(d.getUTCDate()).padStart(2,'0');
+      if (baseYearEl) baseYearEl.value = String(y);
+      if (baseMonthEl) baseMonthEl.value = m;
+      if (baseDayEl) baseDayEl.value = dd;
+    }
+
+    function recomputeAndRenderAll(){
+      // Prepare baseline (if normalization is ON)
+      let baseline = null;
+      if (normalizeEl.checked) {
+        const bl = computeCommonBaselineTime();
+        if (bl === 'ABORT') return; // keep previous view unchanged
+        baseline = bl; // can be number (timestamp) or null
+      }
+
+      // Compute normalized or raw series and set data
+      for (const s of seriesStore){
+        const data = s.raw;
+        if (!data || !data.length) continue;
+        if (normalizeEl.checked && baseline){
+          const basePoint = data.find(d => d.time === baseline);
+          if (!basePoint) { /* shouldn't happen due to pre-check */ continue; }
+          const factor = 100 / basePoint.value;
+          s.norm = data.map(d => ({ time: d.time, value: Math.round((d.value * factor)*1000000)/1000000 }));
+          s.series.setData(s.norm);
+        } else if (normalizeEl.checked && baseline === null) {
+          // normalize to each series' oldest (checkbox on but no baseline chosen)
+          const base = data[0];
+          const factor = 100 / base.value;
+          s.norm = data.map(d => ({ time: d.time, value: Math.round((d.value * factor)*1000000)/1000000 }));
+          s.series.setData(s.norm);
+        } else {
+          s.series.setData(data);
+        }
+      }
+      // Legend refresh and autoscale
+      updateLegendAll();
+      chart.timeScale().fitContent();
+      updateScale();
+    }
+
+    function upsertSeries(label, rows){
+      // Replace if duplicated label, otherwise append (up to MAX_SERIES)
+      let idx = findSeriesIndexByLabel(label);
+      if (idx === -1) {
+        if (seriesStore.length >= MAX_SERIES) {
+          alert(`読み込み可能なシリーズは最大 ${MAX_SERIES} 件までです。`);
+          return false;
+        }
+        seriesStore.push({ label, color: allocateColor(-1), series: null, hidden: false, raw: [], norm: [] });
+        idx = seriesStore.length - 1;
+      }
+      const color = allocateColor(idx);
+      const cleanLabel = normalizeLabel(label);
+      const prevHidden = !!seriesStore[idx].hidden;
+      seriesStore[idx].label = cleanLabel;
+      seriesStore[idx].color = color;
+      seriesStore[idx].hidden = prevHidden; // 置換時は可視状態を維持
+      seriesStore[idx].raw = rows.slice(); // store raw
+      ensureSeriesObjectAt(idx, color);
+      return true;
+    }
+
+    function setupDateAutoAdvance(){
+      if (!baseYearEl || !baseMonthEl || !baseDayEl) return;
+      const enforceDigits = (el, maxLen) => {
+        el.addEventListener('input', () => {
+          const digits = el.value.replace(/\D/g,'').slice(0, maxLen);
+          el.value = digits;
+          if (el === baseYearEl && digits.length === 4) baseMonthEl.focus();
+          if (el === baseMonthEl && digits.length === 2) baseDayEl.focus();
+        });
+      };
+      enforceDigits(baseYearEl, 4);
+      enforceDigits(baseMonthEl, 2);
+      enforceDigits(baseDayEl, 2);
+    }
+    setupDateAutoAdvance();
+
+    function updateScale(){
+      const mode = logScaleEl && logScaleEl.checked
+        ? LightweightCharts.PriceScaleMode.Logarithmic
+        : LightweightCharts.PriceScaleMode.Normal;
+      // Apply to the chart's right price scale (series attaches to 'right' by default)
+      chart.priceScale('right').applyOptions({ mode });
+    }
+    updateScale();
+
+
+    // === Crosshair tooltip logic ===
+    chart.subscribeCrosshairMove((param) => {
+      if (!param || !param.point || param.time === undefined || param.time === null) {
+        hideTip();
+        return;
+      }
+      const { x, y } = param.point;
+      // その時刻にデータがあるシリーズのみ抽出（非表示は除外）
+      const rows = [];
+      if (seriesStore && param.seriesData && typeof param.seriesData.get === 'function'){
+        for (const s of seriesStore){
+          if (!s || s.hidden || !s.series) continue;
+          const d = param.seriesData.get(s.series);
+          if (!d) continue;              // その時刻にデータがない
+          const v = d.value ?? d.close ?? d.open ?? d.high ?? d.low; // lineなら value
+          if (v == null) continue;
+          rows.push(`<div class="row"><span class="sw" style="background:${s.color}"></span><span class="val">${fmtPrice(v)}</span></div>`);
+        }
+      }
+      if (!rows.length){ hideTip(); return; }
+      showTip(x, y, rows.join(''));
+    });
+
+    // マウスがチャート外に出たら隠す
+    chartContainer.addEventListener('mouseleave', hideTip);
+
+
+    // --- helpers ---
+    const FW_MAP = {'０':'0','１':'1','２':'2','３':'3','４':'4','５':'5','６':'6','７':'7','８':'8','９':'9','／':'/','－':'-','．':'.','，':','};
+    function toHalfWidth(s){ return String(s||'').replace(/[０-９／－．，]/g, ch => FW_MAP[ch] || ch); }
+
+    function normalizeEOLKeepCRLF(text){
+      if (/\r\n/.test(text)) return text;            // CRLFはそのまま
+      if (/\r(?!\n)/.test(text)) return text.replace(/\r/g, '\n'); // 古いMac: CR -> LF
+      return text;                                    // LFはそのまま
+    }
+
+    function parseDateToUTCSeconds(s){
+      if(!s) return null;
+      // 半角化して前後空白・クォート除去
+      let t = toHalfWidth(String(s).trim().replace(/["']/g,''));
+      // 不可視スペース（ゼロ幅スペース、ノーブレークスペースなど）を除去
+      t = t.replace(/[\u00A0\u200B\uFEFF]/g, '');
+      // カッコ内の曜日などを除去（例: 2013年5月7日(火)）
+      t = t.replace(/[（(].*?[)）]/g, '').trim();
+
+      // 1) 日本語: YYYY年M月D日（スペース有無OK）
+      let m = t.match(/^(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?$/);
+      if (m) {
+        const y = +m[1], mo = +m[2], d = +m[3];
+        const date = new Date(Date.UTC(y, mo - 1, d, 0, 0, 0));
+        return Number.isFinite(date.getTime()) ? Math.floor(date.getTime()/1000) : null;
+      }
+
+      // 2) 数字のみ: YYYYMMDD
+      m = t.match(/^(\d{4})(\d{2})(\d{2})$/);
+      if(m){
+        const y = +m[1], mo = +m[2], d = +m[3];
+        const date = new Date(Date.UTC(y, mo-1, d, 0, 0, 0));
+        return Math.floor(date.getTime()/1000);
+      }
+
+      // 3) 区切り: YYYY-MM-DD / YYYY/MM/DD / YYYY.M.D (+ optional time/tz)
+      m = t.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?(?:([+\-]\d{2}:?\d{2}|Z))?$/);
+      if(m){
+        const y = +m[1], mo = +m[2], d = +m[3];
+        const date = new Date(Date.UTC(y, mo-1, d, 0, 0, 0));
+        return Math.floor(date.getTime()/1000);
+      }
+
+      // 4) 最後の手段: ブラウザのDateパーサ（環境依存）
+      const dt = new Date(t);
+      if(!isNaN(dt)) return Math.floor(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate())/1000);
+      return null;
+    }
+
+    function pickHeaderAndDelimiter(lines){
+      // 先頭から数行を見て、カンマ/タブ/セミコロンが含まれる最初の行をヘッダーとする
+      const maxScan = Math.min(10, lines.length);
+      for (let i=0; i<maxScan; i++){
+        const lineRaw = lines[i];
+        const line = toHalfWidth(lineRaw);
+        const counts = [
+          {d:',', c:(line.match(/,/g)||[]).length},
+          {d:'\t',  c:(line.match(/\t/g)||[]).length},
+          {d:';', c:(line.match(/;/g)||[]).length},
+        ].sort((a,b)=>b.c-a.c);
+        if (counts[0].c > 0) {
+          return {headerIndex: i, delim: counts[0].d === '\t' ? '\t' : counts[0].d};
+        }
+      }
+      // 区切りが全く無い場合はエラー
+      throw new Error('区切り文字（カンマ/タブ/セミコロン）が見つかりません。CSVの形式をご確認ください。');
+    }
+
+    function normalizeHeader(s){ return toHalfWidth(String(s||'').trim().replace(/^\ufeff/, '')).replace(/["']/g,'').replace(/[\s　]/g,''); }
+
+    // 指定デリミタで分割（ダブルクォート内の区切り文字は無視）
+    function splitRespectingQuotes(str, delimChar) {
+      // delimChar は 1文字（',' / ';' / '\t'）を想定
+      if (delimChar === '\t') return str.split('\t');
+      const out = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < str.length; i++) {
+        const ch = str[i];
+        if (ch === '"') {
+          // 連続する "" はエスケープされた "
+          if (inQuotes && str[i + 1] === '"') { cur += '"'; i++; }
+          else { inQuotes = !inQuotes; }
+        } else if (!inQuotes && ch === delimChar) {
+          out.push(cur);
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      out.push(cur);
+      return out;
+    }
+
+    function parseCSV(rawText){
+      const text = normalizeEOLKeepCRLF(rawText);
+      const lines = text.split(/\r\n|\n/).filter(l => l.trim().length > 0);
+      if (lines.length === 0) throw new Error('CSVが空です');
+
+      // 1行目が銘柄名などでCSVでない場合をスキップし、最初のCSV行をヘッダーとする
+      const { headerIndex, delim } = pickHeaderAndDelimiter(lines);
+      const headerLine = toHalfWidth(lines[headerIndex]);            // <-- 重要: 半角化した行でsplit
+      const header = splitRespectingQuotes(headerLine, delim).map(normalizeHeader);
+
+      const dateAliases = ['日付','基準日','約定日','受渡日','年月日','DATE','Date','date'];
+      const navAliases  = ['基準価額','基準価格','基準価額円','基準価額(円)','基準価額（円）','終値','NAV','nav','Price','price','価格','時価'];
+
+      let idxDate = header.findIndex(h => dateAliases.includes(h));
+      let idxNav  = header.findIndex(h => navAliases.includes(h));
+
+      // --- Fallback: 該当する日付ヘッダが無ければ、各列を日付としてパースできる比率で自動判定 ---
+      if (idxDate === -1) {
+        let bestCol = -1, bestScore = 0;
+        const lookahead = Math.min(lines.length, headerIndex + 51);
+        for (let j=0; j<header.length; j++) {
+          let ok = 0, cnt = 0;
+          for (let i=headerIndex+1; i<lookahead; i++) {
+            const line = toHalfWidth(lines[i]);
+            const cols = splitRespectingQuotes(line, delim);
+            if (cols.length <= j) continue;
+            const t = parseDateToUTCSeconds(cols[j]);
+            if (t) ok++;
+            cnt++;
+          }
+          const ratio = cnt ? ok/cnt : 0;
+          if (ratio > bestScore) { bestScore = ratio; bestCol = j; }
+        }
+        if (bestScore >= 0.6) idxDate = bestCol;
+      }
+
+      if (idxDate === -1) throw new Error('ヘッダーに日付列が見つかりません。例: 日付 / Date');
+
+      if (idxNav === -1) {
+        // heuristic numeric column
+        for (let j=0; j<header.length; j++) {
+          if (j===idxDate) continue;
+          let numericCount=0, checked=0;
+          for (let i=headerIndex+1; i<Math.min(lines.length, headerIndex+51); i++) {
+            const line = toHalfWidth(lines[i]);
+            const cols = splitRespectingQuotes(line, delim);
+            if (cols.length <= j) continue;
+            const norm = toHalfWidth(String((cols[j]||'')));
+            const v = Number(norm.replace(/[\s,円]/g,''));
+            if (!isNaN(v)) numericCount++;
+            checked++;
+          }
+          if (checked>0 && numericCount/checked >= 0.6) { idxNav = j; break; }
+        }
+      }
+      if (idxNav === -1) throw new Error('価格列（基準価額）が特定できませんでした。ヘッダー例: 基準価額 / NAV / Price');
+
+      const rows = [];
+      for (let i = headerIndex + 1; i < lines.length; i++) {
+        const line = toHalfWidth(lines[i]);                 // <-- 重要: 各行も半角化してからsplit
+        const cols = splitRespectingQuotes(line, delim);
+        if (cols.length <= Math.max(idxDate, idxNav)) continue;
+        const t = parseDateToUTCSeconds(cols[idxDate]);
+        const raw = toHalfWidth(String(cols[idxNav])).replace(/["']/g,'').replace(/[\s,円]/g,'');
+        const v = Number(raw);
+        if (!t || !isFinite(v)) continue;
+        rows.push({ time: t, value: v });
+      }
+      rows.sort((a,b)=>a.time-b.time);
+      const dedup = [];
+      for (const r of rows) {
+        if (dedup.length && dedup[dedup.length-1].time === r.time) dedup[dedup.length-1] = r; else dedup.push(r);
+      }
+      return { rows: dedup, header, idxDate, idxNav, delim, headerIndex };
+    }
+
+    function applyNormalization(data, baseDateStr){
+      if (!normalizeEl.checked) return data;
+      // 厳密バリデーション + データ範囲チェック
+      const v = validateBaseDateWithinData(baseDateStr, data);
+      if (!v.ok) {
+        alert(v.msg);
+        appendStatus(v.msg);
+        return data; // 正規化は行わず、元データをそのまま表示
+      }
+      const baseTime = v.time; // null の場合は「最古日」を基準にする
+      const base = (() => {
+        if (baseTime) {
+          // 入力日の厳密一致を優先
+          const exact = data.find(d => d.time === baseTime);
+          if (exact) return exact;
+          // 前日までで最も近いデータ（同日が休場でも直前営業日を許容）
+          let prev = null;
+          for (const d of data) { if (d.time < baseTime) prev = d; else break; }
+          if (!prev) {
+            // ここには通常到達しない（validateで範囲外を弾いている）が安全のため保険
+            alert('その日付のデータは存在しません。');
+            appendStatus('その日付のデータは存在しません。');
+            return null;
+          }
+          return prev;
+        }
+        return data[0];
+      })();
+      if (!base) return data;
+      const factor = 100 / base.value;
+      return data.map(d => ({ time: d.time, value: Math.round((d.value * factor) * 1000000) / 1000000 }));
+    }
+
+    // function render(data) removed
+    // function formatDay(ts) removed
+
+    // === デコーダ：Shift_JIS優先 ===
+    async function decodePreferSjis(file){
+      const buf = await file.arrayBuffer();
+
+      function score(text){
+        let s = 0;
+        if (!/\ufffd/.test(text)) s += 2;
+        if (/日付|基準価額|基準価格|分配金|純資産総額/.test(text)) s += 5;
+        if (/[\u3040-\u30ff\u4e00-\u9faf]/.test(text)) s += 1;
+        return s;
+      }
+
+      // Shift_JISをまず試す（最頻ケースを高速経路に）
+      let sj = ''; try { sj = new TextDecoder('shift_jis').decode(buf); } catch(e) {}
+      const ssj = score(sj);
+      if (ssj >= 6) { appendStatus(`デコード: Shift_JIS (${ssj})`); return sj; }
+
+      // 妥当性が低いときのみUTF-8も試す
+      let u8 = ''; try { u8 = new TextDecoder('utf-8').decode(buf); } catch(e) {}
+      const su8 = score(u8);
+      appendStatus(`デコード比較: Shift_JIS=${ssj} / UTF-8=${su8}`);
+      return su8 > ssj ? u8 : sj;
+    }
+
+    function handleText(text, sourceLabel='source'){
+      try{
+        const label = labelFromTextAndSource(text, sourceLabel);
+        const { rows, header, idxDate, idxNav, delim, headerIndex } = parseCSV(text);
+
+        if (!rows.length) {
+          appendStatus([
+            `ソース: ${sourceLabel}`,
+            `ヘッダー行: ${headerIndex+1} 行目`,
+            `区切り: ${delim === '\t' ? 'タブ' : delim}`,
+            `ヘッダー: ${header.join(' | ')}`,
+            `日付列: ${idxDate} / 価格列: ${idxNav}`,
+            `件数: 0`
+          ].join('\n'));
+          alert('有効な行が見つかりませんでした');
+          return;
+        }
+
+        // upsert into store
+        const ok = upsertSeries(label, rows);
+        if (!ok) return;
+
+        // Status: append (do not overwrite)
+        appendStatus([
+          `ソース: ${sourceLabel}`,
+          `ラベル: ${label}`,
+          `ヘッダー行: ${headerIndex+1} 行目`,
+          `区切り: ${delim === '\t' ? 'タブ' : delim}`,
+          `ヘッダー: ${header.join(' | ')}`,
+          `日付列: ${idxDate} / 価格列: ${idxNav}`,
+          `件数: ${rows.length}`
+        ].join('\n'));
+        appendStatus('-----');
+
+        // いったん凡例を更新（後続の正規化判定で描画がABORTされても凡例は反映させる）
+        updateLegendAll();
+
+        // 正規化ON時は「全シリーズ共通の最古日」を自動で基準日にセット
+        // 共通日が無い場合は一時的に正規化をOFFにして描画を継続
+        if (normalizeEl && normalizeEl.checked) {
+          const tCommon = computeOldestCommonTimestamp();
+          if (tCommon != null) {
+            setBaseDateInputsFromTs(tCommon);
+          } else {
+            appendStatus('注意: 全てのシリーズに共通する日付がありません。正規化を一時的にOFFにして描画します。');
+            normalizeEl.checked = false;
+          }
+        }
+
+        // Recompute & render all series
+        recomputeAndRenderAll();
+
+      }catch(e){
+        alert(e.message||String(e));
+        appendStatus('解析エラー: ' + (e.message||String(e)));
+      }
+    }
+
+    async function handleFiles(files){
+      if (!files || !files.length) return;
+      // iterate selected/dropped files in order
+      for (const f of files){
+        try{
+          appendStatus(`読み込み中: ${f.name} (${Math.round(f.size/1024)} KB)`);
+          const text = await decodePreferSjis(f);
+          handleText(text, `file:${f.name}`);
+        }catch(e){
+          alert(e.message||String(e));
+          appendStatus(`読み込み失敗: ${f.name}`);
+        }
+        // Enforce MAX_SERIES after each file (in case of batch)
+        if (seriesStore.length > MAX_SERIES) {
+          alert(`読み込み可能なシリーズは最大 ${MAX_SERIES} 件までです。超過分は読み込みません。`);
+          break;
+        }
+      }
+    }
+
+    // ===== Drag & Drop support =====
+    document.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'none'; });
+    document.addEventListener('drop', (e) => { e.preventDefault(); });
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); drop.classList.add('dragover'); e.dataTransfer.dropEffect = 'copy'; });
+    drop.addEventListener('dragleave', (e) => { e.preventDefault(); drop.classList.remove('dragover'); });
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault(); e.stopPropagation(); drop.classList.remove('dragover');
+      const dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length) { handleFiles(dt.files); }
+      else { appendStatus('ファイルが見つかりません（ブラウザ/環境の制限の可能性）'); }
+    });
+
+    // ===== Click/select =====
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+    // ===== Apply normalization =====
+    applyBtn.addEventListener('click', () => {
+      if (!seriesStore.length) { appendStatus('データがありません'); return; }
+      recomputeAndRenderAll();
+    });
+
+    if (logScaleEl) {
+      logScaleEl.addEventListener('change', updateScale);
+    }
+    if (normalizeEl) {
+      normalizeEl.addEventListener('change', () => {
+        if (!seriesStore.length) { appendStatus('データがありません'); return; }
+        recomputeAndRenderAll();
+      });
+    }
+    if (savePngBtn) {
+      savePngBtn.addEventListener('click', saveChartAsPNG);
+    }
+
+  // === Help Modal Control (init after DOM is ready; query lazily) ===
+  document.addEventListener('DOMContentLoaded', () => {
+    const helpBtn = document.getElementById('helpBtn');
+
+    const getHelpEls = () => ({
+      helpModal: document.getElementById('helpModal'),
+      helpClose: document.getElementById('helpClose'),
+      helpContent: document.getElementById('helpContent'),
+      helpTpl: document.getElementById('helpHtml'),
+    });
+
+    function openHelp(){
+      const { helpModal, helpClose, helpContent, helpTpl } = getHelpEls();
+      if (helpTpl && helpContent && !helpContent.dataset.loaded){
+        helpContent.innerHTML = helpTpl.innerHTML; // 埋め込みHTMLをロード
+        helpContent.dataset.loaded = '1';
+      }
+      helpModal?.classList.add('open');
+      setTimeout(()=>{ helpClose?.focus(); }, 0);
+    }
+    function closeHelp(){
+      const { helpModal } = getHelpEls();
+      helpModal?.classList.remove('open');
+    }
+
+    helpBtn?.addEventListener('click', openHelp);
+
+    const { helpModal, helpClose } = getHelpEls();
+    helpClose?.addEventListener('click', closeHelp);
+    helpModal?.addEventListener('click', (e)=>{ if (e.target === helpModal) closeHelp(); });
+    window.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') closeHelp(); });
+  });
+
+</script>
+  <!-- end script -->
+  <footer style="text-align:center;margin-top:24px;font-size:12px;color:#9fb0c3;line-height:1.6;">
+    <div>created by GPT-5 Thinking with <a href="https://x.com/_hirotgr" target="_blank" style="color:#6aa0ff;text-decoration:none;">@_hirotgr</a></div>
+    <div>powered by <a href="https://jp.tradingview.com/lightweight-charts/" target="_blank" style="color:#6aa0ff;text-decoration:none;">Lightweight Charts™︎</a> (©TradingView) : License: Apache2.0 (see LICENSE and NOTICE on <a href="https://github.com/tradingview/lightweight-charts" target="_blank" style="color:#6aa0ff;text-decoration:none;">GitHub</a>)</div>
+
+    <!-- Help Modal and Embedded README HTML -->
+    <div id="helpModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <div class="modal-panel" tabindex="-1">
+        <div class="modal-head">
+          <div id="helpTitle" class="title">使い方マニュアル</div>
+          <button id="helpClose" class="modal-close" aria-label="閉じる">閉じる</button>
+        </div>
+        <div id="helpContent" class="modal-body"></div>
+      </div>
+    </div>
+
+    <template id="helpHtml">
+      <div>
+        <h1>概要</h1>
+        <ul>
+          <li>このアプリはマニュアルを含め、全部ChatGPT-5 Thinkingが書いたものです。</li>
+          <li>TradingViewがApache 2.0ライセンスで提供する<strong>Lightweight Charts™︎</strong>ライブラリを使用しています。ライセンスなどは以下を参照してください。
+            <ul>
+              <li><a href="https://jp.tradingview.com/lightweight-charts/" target="_blank">https://jp.tradingview.com/lightweight-charts/</a></li>
+              <li><a href="https://github.com/tradingview/lightweight-charts" target="_blank">https://github.com/tradingview/lightweight-charts</a></li>
+            </ul>
+          </li>
+          <li><strong>Lightweight Charts™︎</strong>ライブラリ取得のために CDN(<a href="https://cdn.jsdelivr.net/" target="_blank">https://cdn.jsdelivr.net/</a>)への接続性が必要です</li>
+          <li>Googleのフォントライブラリ(<a href="https://fonts.googleapis.com" target="_blank">https://fonts.googleapis.com</a>)への接続性が必要です。</li>
+          <li>GoogleとAdobeが共同開発し、Googleから提供されている Noto Sans JP フォントを使用しています。ライセンスはSIL Open Font License 1.1です。詳しくは以下を参照してください。</li>
+            <ul>
+              <li><a href="https://developers.google.com/fonts/faq?hl=ja" target="_blank">https://developers.google.com/fonts/faq?hl=ja</a></li>
+              <li><a href="https://fonts.google.com/" target="_blank">https://fonts.google.com/</a></li>
+            </ul>
+          </li>
+        </ul>
+        <ul>
+          <br>
+          <li>GitHubからこのHTMLファイルをダウンロードし、ダブルクリックなどによりファイルをブラウザで開くだけで使えます。</li>
+          <li>CSVファイルは「ファンド名.csv」形式に名前を変えてください。
+            <ul>
+              <li>ただし、<strong>1行目がCSVヘッダでない場合</strong>は、1行目の文字列をラベル(ファンド名)と仮定して読み込みますのでファイル名変更は不要です。</li>
+              <li>SBI証券からダウンロードしたCSVファイルのように、複数行に渡ってCSVヘッダ以外の文字列がある場合は対応していません。</li>
+            </ul>
+          </li>
+          <br>
+        </ul>
+        <ul>
+          <br>
+          <li>このアプリの使用によって生じた損害に対して@_hirotgrはいかなる責任も負いません。</li>
+          <li>このアプリのリポジトリ: <a href="https://github.com/hirotgr/jfunds-nav-chart" target="_blank">https://github.com/hirotgr/jfunds-nav-chart</a></li>
+          <br>
+        </ul>
+        <hr>
+        <h1>投資信託CSV比較</h1>
+        <p>複数の投資信託の <strong>基準価額データ（CSV）</strong> を読み込み、<br> <strong>TradingViewの軽量チャートライブラリ（Lightweight Charts™︎）</strong> を利用して比較表示できるツールです。最大10のCSVを同時に重ねて比較できます。</p>
+
+        <h2>概要</h2>
+        <table>
+          <thead><tr><th>機能</th><th>説明</th></tr></thead>
+          <tbody>
+            <tr><td>対応エンコーディング</td><td>Shift-JIS（既定） / UTF-8 自動判定</td></tr>
+            <tr><td>区切り文字</td><td>カンマ (,)、タブ、セミコロン (;)</td></tr>
+            <tr><td>日付形式</td><td>YYYY年MM月DD日 / YYYYMMDD / YYYY-MM-DD / YYYY/MM/DD / YYYY.M.D</td></tr>
+            <tr><td>数値解析</td><td>クォート内カンマ（"12,345"）や「円」付きにも対応</td></tr>
+            <tr><td>CSV構造</td><td>1行目に銘柄名＋2行目以降がCSV でもOK</td></tr>
+            <tr><td>最大比較数</td><td>10ファイルまで</td></tr>
+            <tr><td>保存</td><td>PNG画像保存（凡例付き）</td></tr>
+            <tr><td>凡例操作</td><td>クリックで表示/非表示切替、削除ボタンで削除</td></tr>
+            <tr><td>正規化</td><td>基準日を100としてスケーリング</td></tr>
+            <tr><td>対数スケール</td><td>対数チャート表示対応</td></tr>
+            <tr><td>その他</td><td>チャート右下のつまみでリサイズ可能</td></tr>
+          </tbody>
+        </table>
+
+        <h2>画面構成</h2>
+        <h3>左パネル（CSV読み込み）</h3>
+        <ul>
+          <li>「ここをクリックしてCSVを選択」またはドラッグ＆ドロップでCSVを読み込み</li>
+          <li>一度に最大10のCSVを読み込めます</li>
+        </ul>
+
+        <h3>表示設定</h3>
+        <ul>
+          <li><strong>正規化基準日</strong>（YYYY / MM / DD）を入力（4桁/2桁入力でフォーカス自動移動）</li>
+          <li><strong>正規化</strong>：基準日を100として比較</li>
+          <li><strong>対数チャート</strong>：Y軸を対数スケールに変更</li>
+          <li><strong>再描画</strong>：再計算</li>
+          <li><strong>PNG保存</strong>：凡例を合成して画像保存</li>
+        </ul>
+
+        <h3>右パネル（ステータス）</h3>
+        <ul>
+          <li>ファイル名・解析結果・件数などが追記されます（スクロール可、区切り線「-----」）</li>
+        </ul>
+
+        <h3>下部（凡例）</h3>
+        <ul>
+          <li>色スウォッチ＋ラベル＋削除ボタン</li>
+          <li>ラベルクリックで表示/非表示をトグル（非表示時は半透明＋取り消し線）</li>
+        </ul>
+
+        <h3>チャート領域</h3>
+        <ul>
+          <li>マウスホイールやドラッグでズーム・パンが可能</li>
+          <li>右クリックは無効（「PNG保存」を使用）</li>
+        </ul>
+
+        <h2>チャートエリアでのマウス操作</h2>
+        <table>
+          <thead><tr><th>操作</th><th>動作</th></tr></thead>
+          <tbody>
+            <tr><td><strong>ホイール上下</strong></td><td>X軸方向のズームイン／ズームアウト</td></tr>
+            <tr><td><strong>ホイール + Shiftキー</strong></td><td>Y軸方向のズーム（縦スケール変更）</td></tr>
+            <tr><td><strong>左クリック＆ドラッグ（グラフ内）</strong></td><td>表示範囲のスクロール（左右）</td></tr>
+            <tr><td><strong>左クリック＆ドラッグ（Y軸ラベル上）</strong></td><td>Y軸のスケール範囲を移動（上下）</td></tr>
+            <tr><td><strong>右下の「つまみ」ドラッグ</strong></td><td>チャートエリアのサイズを変更（縦横両方）</td></tr>
+            <tr><td><strong>ダブルクリック（チャートエリア）</strong></td><td>全データを表示範囲に自動フィット</td></tr>
+            <tr><td><strong>ホイールクリック（中ボタン）</strong></td><td>スクロールリセット（中央位置へ）</td></tr>
+          </tbody>
+        </table>
+        <p><em>補足：</em>マウス操作はLightweight Charts™︎の標準機能に準じます。スマートトラック（カーソル追従）は1点表示で、凡例・ツールチップに現在値が反映されます。</p>
+
+        <h2>CSV仕様</h2>
+        <h3>エンコーディング</h3>
+        <ul>
+          <li>既定で <strong>Shift-JIS + CR/LF</strong> を最優先</li>
+          <li>妥当性が低い場合のみ UTF-8 を自動判定</li>
+        </ul>
+        <h3>ヘッダとデータ判定</h3>
+        <ul>
+          <li>カンマ・タブ・セミコロンのある最初の行をヘッダと判断</li>
+          <li>それ以前の行（銘柄名など）は無視</li>
+        </ul>
+        <h3>1行目がCSVヘッダではなくファンド名のCSVファイル例</h3>
+        <p>以下のようなCSVファイルは1行目を<strong>銘柄名</strong>として扱います。</p>
+        <h4> (三菱UFJアセットマネジメント)</h4>
+        <pre><code>ｅＭＡＸＩＳ Ｓｌｉｍ 米国株式（Ｓ＆Ｐ500）<br>基準日,基準価額(円),純資産総額（億円）<br>2018/07/03,10038,0.01</code></pre>
+        <h4>(大和アセットマネジメント)</h4>
+        <pre><code>"Tracers S&P500ゴールドプラス"<br>基準日,基準価額（円）,前日比（円）,分配金（税引前）（円）,純資産総額（億円）,基準価額（税引前分配金再投資ベース）（円）<br>2022-08-31,10000,,,1.99,10000</code></pre>
+        <h3>対応できないCSVファイルの例</h3>
+        <p>SBI証券からダウンロードできるCSVファイルのような非定型なCSVファイルには対応しません。</p>
+        <pre><code>基準価額一覧<br><br>ファンド名,"ＳＢＩ・ｉシェアーズ・ゴールドファンド（為替ヘッジなし）"<br><br>検索期間,検索開始年月日,検索終了年月日<br>"","20250920","20251020"<br><br>年月日,基準価額（円）,前日比（円）,純資産総額（百万円）<br>"2025/10/17",23045,367,175166</code></pre>
+        <p>エディタなどで最初の数行を加工すれば対応できます。</p>
+        <pre><code>ＳＢＩ・ｉシェアーズ・ゴールドファンド（為替ヘッジなし）<br>基準価額（円）,前日比（円）,純資産総額（百万円）<br>"2025/10/17",23045,367,175166</code></pre>
+        <h3>日付列・価格列の自動判定</h3>
+        <ul>
+          <li>日付候補: <code>日付</code>, <code>基準日</code>, <code>年月日</code>, <code>Date</code>, <code>DATE</code> など（見つからなければ内容から推定）</li>
+          <li>価格候補: <code>基準価額</code>, <code>基準価格</code>, <code>NAV</code>, <code>Price</code>, <code>価格</code>, <code>時価</code> など（見つからなければ数値列を自動判定）</li>
+        </ul>
+
+        <h3>数値正規化</h3>
+        <ul>
+          <li>\"12,345\", 9,904円 などを自動的に数値化</li>
+          <li>全角数字・記号も半角変換</li>
+        </ul>
+
+        <h3>昇順・降純の両方に対応</h3>
+        <ul>
+          <li>日付が昇順・降順どちらでもソートを行うことで対応</li>
+        </ul>
+
+        <h3>ラベルの決定</h3>
+        <ul>
+          <li>1行目がCSVヘッダでない場合：1行目の文字列をラベル(ファンド名)に使用</li>
+          <li>1行目がCSVヘッダの場合：ファイル名（.csv 除去）をラベルに(ファンド名)使用</li>
+          <li>同一ラベルの再読み込みは 置換（色を維持）</li>
+        </ul>
+
+        <h2>使い方</h2>
+        <ol>
+          <li>CSVファイルを選択またはドラッグ＆ドロップ（最大10）</li>
+          <li>ステータス欄に解析が出力され、チャートが描画されます</li>
+          <li>正規化ON：基準日を100として比較（空欄なら共通最古日を自動採用）</li>
+          <li>対数チャートON：Y軸が対数に</li>
+          <li>凡例：クリックで表示/非表示、削除ボタンで削除</li>
+          <li>PNG保存：チャート＋軸＋グリッド＋可視シリーズ凡例を合成して保存</li>
+        </ol>
+
+        <h2>正規化のルール</h2>
+        <ul>
+          <li>ON：指定した基準日の値を100としてスケーリング</li>
+          <li>OFF：元の価格をそのまま表示</li>
+          <li>基準日が空：全シリーズに共通する最古日を基準とする</li>
+          <li>基準日指定時：すべてのシリーズにその日付のデータが必要</li>
+          <li>不正な日付（例: 2024-02-30）は自動エラー</li>
+        </ul>
+
+        <h2>PNG保存と右クリック</h2>
+        <ul>
+          <li>右クリックの保存/コピーは無効</li>
+          <li>PNG保存ボタンで画像化（軸・グリッド・系列すべて、可視シリーズの凡例のみ合成）</li>
+        </ul>
+
+        <h2>ステータスログ</h2>
+        <ul>
+          <li>各CSVの解析情報（ヘッダ、区切り、列位置、件数など）を追記</li>
+          <li>各ファイル末尾に <code>-----</code> を挿入</li>
+          <li>縦スクロールで全履歴を保持</li>
+        </ul>
+
+        <h2>よくあるエラー</h2>
+        <table>
+          <thead><tr><th>エラー内容</th><th>対処方法</th></tr></thead>
+          <tbody>
+            <tr><td>ヘッダーに日付列が見つからない</td><td>CSVの先頭行が銘柄名か確認。日付の表記を確認。</td></tr>
+            <tr><td>価格列が特定できない</td><td>一般的な列名か、値が文字列扱いになっていないか確認。</td></tr>
+            <tr><td>正規化が反映されない</td><td>基準日が全シリーズに存在するか確認。共通最古日が無ければ自動でOFF。</td></tr>
+          </tbody>
+        </table>
+
+        <h2>制限・注意事項</h2>
+        <ul>
+          <li>最大 10シリーズ（色：#6aa0ff, #ffa600, #36cfc9, #e66abd, #8bc34a, #ff6e6e, #b58cff, #ffd166, #00c9a7, #ff8ec9）</li>
+          <li>同名シリーズは置換（色は維持）</li>
+          <li>タブ区切り＋クォート混在CSVの完全互換は未対応（拡張可能）</li>
+          <li>タイムゾーンはUTC基準（国内ファンドのCSVデータは年月日だけで時刻の記載がないので実質的に影響なし）</li>
+        </ul>
+
+        <h2>ヒント</h2>
+        <ul>
+          <li>凡例クリックで一時的に非表示→見たい銘柄だけを確認</li>
+          <li>基準日空欄＋正規化ON→共通最古日で自動正規化</li>
+          <li>PNG保存で可視状態のシリーズのみ画像に出力</li>
+        </ul>
+
+        <h2>バージョン情報</h2>
+        <ul>
+          <li>2025/10/20 : version 0.1.0 : 初期リリース</li>
+        </ul>
+      </div>
+    </template>
+
+  </footer>
+</body>
+</html>
