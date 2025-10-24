@@ -8,8 +8,23 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600&display=swap" rel="stylesheet">
   <style>
     :root{ --bg:#0b0f14; --panel:#111720; --text:#e8eef6; --muted:#9fb0c3; --accent:#6aa0ff; }
-    body{margin:0;padding:16px;background:var(--bg);color:var(--text);font-family:'Noto Sans JP',system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
-    .wrap{max-width:1100px;margin:0 auto}
+    body{margin:0 10px;padding:16px;background:var(--bg);color:var(--text);font-family:'Noto Sans JP',system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+    .wrap{max-width:none;margin:0 auto}
+    header {
+      max-width: 1100px;
+      margin: 0 auto;
+      width: 100%;
+      margin-bottom: 6px;
+    }
+    .content-panel {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    #legend {
+      width: 100%;
+      max-width: none;
+      margin: 0 auto;
+    }
     .panel{background:var(--panel);border-radius:12px;padding:12px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
     #chart{
       height:600px;
@@ -30,6 +45,7 @@
     .drop.dragover{ box-shadow:0 0 0 2px rgba(106,160,255,.35) inset; border-color:#6aa0ff; }
     .controls{display:flex;flex-direction:column;gap:8px;align-items:flex-start;flex-wrap:nowrap;margin-top:8px}
     .ctrl-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .ctrl-row label { font-size: 14px; }
     .btn{
       cursor:pointer;
       border:1px solid #2a3443;
@@ -37,10 +53,9 @@
       color:var(--text);
       border-radius:8px;
       padding:6px 12px;
-      font-size:13px;
+      font-size:12px;
     }
     #file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;z-index:-1;left:-9999px;top:auto}
-    /* input[type=date] removed */
     input.datech{
       padding:8px 10px;border-radius:10px;border:1px solid #2a3443;
       background:#0f141c;color:var(--text);font-size:13px;text-align:center;
@@ -59,8 +74,6 @@
     #status::-webkit-scrollbar{ width:10px; height:10px }
     #status::-webkit-scrollbar-track{ background:#0f141c }
     #status::-webkit-scrollbar-thumb{ background:#2a3443; border-radius:8px; border:2px solid #0f141c }
-    /* .status-panel{min-height:96px} removed */
-    h1{font-size:18px;margin:0 0 10px}
     .hint{font-size:11px;color:var(--muted);margin-top:4px}
     .legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--text);margin:0 0 12px}
     .legend-item{display:flex;gap:8px;align-items:center;background:#0f141c;border:1px solid #2a3443;border-radius:8px;padding:6px 8px}
@@ -88,6 +101,8 @@
   /* === Help Modal === */
   .help-btn{ margin-left:auto; border:1px solid #2a3443; background:#152033; color:var(--text); border-radius:8px; padding:6px 10px; font-size:13px; cursor:pointer; }
   .help-btn:hover{ background:#1b2738; border-color:#3a4960; }
+  .link-btn{ border:1px solid #2a3443; background:#152033; color:#6aa0ff; border-radius:8px; padding:6px 10px; font-size:13px; text-decoration:none; cursor:pointer; }
+  .link-btn:hover{ background:#1b2738; border-color:#3a4960; }
   .modal{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.6); z-index:9999; }
   .modal.open{ display:flex; }
   .modal-panel{ width:min(980px, 92vw); height:min(86vh, 900px); background:var(--panel); border:1px solid #2a3443; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.45); display:flex; flex-direction:column; overflow:hidden; }
@@ -118,41 +133,45 @@
 </head>
 <body>
   <div class="wrap">
-    <header style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <header style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
       <div style="font-size:18px;font-weight:600;">投資信託CSV比較</div>
-      <a href="https://jp.tradingview.com/lightweight-charts/" target="_blank" style="font-size:14px;background:#152033;color:#9fb0c3;padding:2px 8px;border-radius:999px;text-decoration:none;display:inline-block;">powered by Lightweight Charts™︎ (©TradingView)</a>
+      <div style="flex:1;"></div>
+      <a href="https://hirotgr.github.io/jfunds-comparison/jfunds-comparison.html" class="link-btn" target="_blank">jfunds-comparison</a>
       <button id="helpBtn" class="help-btn" title="使い方を開く">ヘルプ</button>
     </header>
-    <div class="panel" style="margin-bottom:12px">
-      <div class="row">
-        <!-- 左：読み込みエリア（小型化） -->
-        <div>
-          <label for="file" id="drop" class="drop" tabindex="0">
-            ここをクリックしてCSVを選択 (最大10個)<br><span class="hint">またはここにドラッグ＆ドロップ</span>
-          </label>
-          <input id="file" type="file" accept=".csv,text/csv" multiple>
-          <div class="controls">
-            <div><label class="hint">表示設定</label></div>
-            <!-- 上段: 正規化基準日 + 入力ボックス + 正規化 -->
-            <div class="ctrl-row">
-              <label style="margin-right:8px">正規化基準日</label>
-              <input id="baseY" class="datech" type="text" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="YYYY" style="width:64px;margin-right:4px">
-              <input id="baseM" class="datech" type="text" inputmode="numeric" pattern="\d{1,2}" maxlength="2" placeholder="MM" style="width:40px;margin-right:4px">
-              <input id="baseD" class="datech" type="text" inputmode="numeric" pattern="\d{1,2}" maxlength="2" placeholder="DD" style="width:40px;margin-right:10px">
-              <label style="margin-right:10px"><input id="normalize" type="checkbox"> 正規化</label>
-            </div>
-            <!-- 下段: 対数チャート + 再描画 + PNG保存 -->
-            <div class="ctrl-row">
-              <label style="margin-right:10px"><input id="logScale" type="checkbox"> 対数チャート</label>
-              <button id="apply" class="btn">再描画</button>
-              <button id="savePng" class="btn">PNG保存</button>
+    <div class="content-panel">
+      <div class="panel" style="margin-bottom:12px">
+        <div class="row">
+          <!-- 左：読み込みエリア（小型化） -->
+          <div>
+            <label for="file" id="drop" class="drop" tabindex="0">
+              ここをクリックしてCSVを選択  (最大10個)<br><span class="hint">またはドラッグ＆ドロップ</span>
+            </label>
+            <input id="file" type="file" accept=".csv,text/csv" multiple>
+            <div class="controls">
+              <div><label class="hint">表示設定</label></div>
+              <!-- 上段: 正規化基準日 + 入力ボックス + 正規化 -->
+              <div class="ctrl-row">
+                <label style="margin-right:10px"><input id="normalize" type="checkbox"> 正規化</label>
+                <label style="margin-right:8px">正規化基準日</label>
+                <input id="baseY" class="datech" type="text" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="YYYY" style="width:64px;margin-right:4px">
+                <input id="baseM" class="datech" type="text" inputmode="numeric" pattern="\d{1,2}" maxlength="2" placeholder="MM" style="width:40px;margin-right:4px">
+                <input id="baseD" class="datech" type="text" inputmode="numeric" pattern="\d{1,2}" maxlength="2" placeholder="DD" style="width:40px;margin-right:10px">
+                <button id="update-baseline-btn" class="btn">基準日更新</button>
+              </div>
+              <!-- 下段: 対数チャート + 再描画 + PNG保存 -->
+              <div class="ctrl-row">
+                <label style="margin-right:10px"><input id="logScale" type="checkbox"> 対数チャート</label>
+                <button id="apply" class="btn">再描画</button>
+                <button id="savePng" class="btn">PNG保存</button>
+              </div>
             </div>
           </div>
-        </div>
-        <!-- 右：ステータス -->
-        <div class="panel status-panel">
-          <div style="font-size:13px;margin-bottom:4px">ステータス</div>
-          <div id="status" class="status">待機中</div>
+          <!-- 右：ステータス -->
+          <div class="panel status-panel">
+            <div style="font-size:13px;margin-bottom:4px">ステータス</div>
+            <div id="status" class="status">待機中</div>
+          </div>
         </div>
       </div>
     </div>
@@ -162,7 +181,6 @@
   <script>
     const $ = (s)=>document.querySelector(s);
     const statusEl = $('#status');
-    function setStatus(msg){ statusEl.textContent = msg; console.log('[STATUS]', msg); }
     function appendStatus(msg){
       if (!statusEl) return;
       statusEl.textContent = (statusEl.textContent ? statusEl.textContent + '\n' : '') + msg;
@@ -182,15 +200,13 @@
     const legendEl = $('#legend');
     function updateLegendAll(){
       if (!legendEl) return;
-      // 既存 store 内に .csv が残っている場合もここで正規化
-      for (const s of seriesStore) s.label = normalizeLabel(s.label);
       if (!seriesStore.length) { legendEl.innerHTML = ''; return; }
       const html = seriesStore.map((s, i) =>
       `<div class="legend-item${s.hidden ? ' off' : ''}" data-idx="${i}" title="クリックで表示/非表示を切替">
         <span class="swatch" style="background:${s.color}"></span>
-           <span class="name">${escapeHTML(s.label)}</span>
-           <button class="del" title="この系列を削除" data-idx="${i}">削除</button>
-         </div>`
+        <span class="name">${escapeHTML(s.label)}</span>
+        <button class="del" title="この系列を削除" data-idx="${i}">削除</button>
+      </div>`
       ).join('');
       legendEl.innerHTML = html;
     }
@@ -204,6 +220,32 @@
     const applyBtn = $('#apply');
     const logScaleEl = $('#logScale');
     const savePngBtn = $('#savePng');
+    const updateBaselineBtn = $('#update-baseline-btn');
+
+    // 基準日入力欄のクリア
+    function clearBaseDateInputs(){
+      if (baseYearEl) baseYearEl.value = '';
+      if (baseMonthEl) baseMonthEl.value = '';
+      if (baseDayEl) baseDayEl.value = '';
+    }
+
+    // 正規化トグル：ONなら未指定時に共通最古日を自動セット、OFFなら基準日を消去
+    if (normalizeEl) {
+      normalizeEl.addEventListener('change', () => {
+        if (normalizeEl.checked) {
+          const baseStr = getBaseDateStr();
+          if (!baseStr) {
+            const tCommon = computeOldestCommonTimestamp();
+            if (tCommon != null) {
+              setBaseDateInputsFromTs(tCommon);
+            }
+          }
+        } else {
+          clearBaseDateInputs();
+        }
+        recomputeAndRenderAll();
+      });
+    }
 
 
     // 凡例クリック：削除 or 可視トグル
@@ -259,20 +301,19 @@
     }
 
     // ===== Multi-series state =====
-    const PALETTE = [
-      '#6aa0ff', // blue
-      '#ffa600', // orange
-      '#36cfc9', // teal
-      '#e66abd', // magenta
-      '#8bc34a', // green
-      '#ff6e6e', // red
-      '#b58cff', // purple
-      '#ffd166', // amber
-      '#00c9a7', // aqua
-      '#ff8ec9', // pink
-    ];
+const PALETTE = [
+  '#6aa0ff', // vivid blue
+  '#ffa600', // orange
+  '#36cfc9', // teal
+  '#c4d82e', // lime-yellow
+  '#8e5fff', // violet
+  '#ff3b3b', // bright red
+  '#5cd6ff', // light cyan
+  '#ffd54f', // gold
+  '#3d5afe', // indigo
+  '#ff4fa3', // strong pink
+];
     const MAX_SERIES = 10;
-    /** @type {{label:string,color:string,series:any,hidden?:boolean,raw:Array<{time:number,value:number}>, norm:Array<{time:number,value:number}>}[]} */
     const seriesStore = [];
 
     function getBaseDateStr(){
@@ -436,7 +477,16 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = 'chart.png';
+          // JST (UTC+9) timestamped filename
+          const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
+          const YYYY = now.getUTCFullYear();
+          const MM = String(now.getUTCMonth() + 1).padStart(2, '0');
+          const DD = String(now.getUTCDate()).padStart(2, '0');
+          const hh = String(now.getUTCHours()).padStart(2, '0');
+          const mm = String(now.getUTCMinutes()).padStart(2, '0');
+          const ss = String(now.getUTCSeconds()).padStart(2, '0');
+          const filename = `chart-${YYYY}${MM}${DD}-${hh}${mm}${ss}.png`;
+          a.download = filename;
           document.body.appendChild(a);
           a.click();
           setTimeout(()=>{ URL.revokeObjectURL(url); document.body.removeChild(a); }, 500);
@@ -504,7 +554,7 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
         const t = parseYMDStrictToUTCSeconds(m[1], m[2], m[3]);
         if (t == null) { alert('存在しない年月日です（例: 月=13 や 日=33 は無効）'); return 'ABORT'; }
         // require exact presence in all series
-        const missing = seriesStore.filter(s => !s.raw.find(d => d.time === t)).map(s => s.label);
+        const missing = seriesStore.filter(s => !s.raw.find(d => Number(d.time) === Number(t))).map(s => s.label);
         if (missing.length){
           alert('以下のシリーズで基準日のデータがありません:\n- ' + missing.join('\n- '));
           return 'ABORT';
@@ -565,20 +615,69 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
     }
 
     function recomputeAndRenderAll(){
-      // Prepare baseline (if normalization is ON)
+      // === Recompute normalization baseline and reset all cached series ===
+      // キャッシュされた正規化データを強制的にクリアして再スケーリングを保証
+      for (const s of seriesStore) {
+        if (!s) continue;
+        s.norm = [];
+        if (s.series) {
+          try { s.series.setData([]); } catch(e){}
+        }
+      }
+
+      // 目的: 正規化ONにした時に旧キャッシュを破棄し、全シリーズを共通基準で再スケール
+      // これにより「正規化OFF→ON→ズレ発生」問題を防止
+
+      // baseline 再計算（正規化ON時のみ）
       let baseline = null;
       if (normalizeEl.checked) {
         const bl = computeCommonBaselineTime();
         if (bl === 'ABORT') return; // keep previous view unchanged
-        baseline = bl; // can be number (timestamp) or null
+        baseline = bl; // number (timestamp) または null
+        // 入力欄が空で、共通基準日が決まった場合は入力欄を自動更新
+        const baseStrNow = getBaseDateStr();
+        if (!baseStrNow && typeof baseline === 'number') {
+          setBaseDateInputsFromTs(baseline);
+        }
       }
+    // === 正規化ライン（価格ライン） ===
+    // 以前は別LineSeriesで水平線を描画していたが、描画順や可視レンジ依存で見えないことがあった。
+    // 各シリーズに PriceLine を付与する方式へ変更（正規化ONで表示、OFFで除去）。
+    if (normalizeEl.checked) {
+      for (const s of seriesStore) {
+        if (!s || !s.series) continue;
+        // 既存のラインがあれば一旦削除して再作成（状態の取りこぼし防止）
+        if (s._priceLine100) {
+          try { s.series.removePriceLine(s._priceLine100); } catch(e){}
+          s._priceLine100 = null;
+        }
+        try {
+          s._priceLine100 = s.series.createPriceLine({
+            price: 100,
+            color: 'rgba(255,255,255,0.9)',
+            lineStyle: LightweightCharts.LineStyle.Dotted,
+            lineWidth: 1,
+            axisLabelVisible: false,
+            title: ''
+          });
+        } catch(e){}
+      }
+    } else {
+      // 正規化OFF: 価格ラインを全て除去
+      for (const s of seriesStore) {
+        if (s && s.series && s._priceLine100) {
+          try { s.series.removePriceLine(s._priceLine100); } catch(e){}
+          s._priceLine100 = null;
+        }
+      }
+    }
 
       // Compute normalized or raw series and set data
       for (const s of seriesStore){
         const data = s.raw;
         if (!data || !data.length) continue;
         if (normalizeEl.checked && baseline){
-          const basePoint = data.find(d => d.time === baseline);
+          const basePoint = data.find(d => Number(d.time) === Number(baseline));
           if (!basePoint) { /* shouldn't happen due to pre-check */ continue; }
           const factor = 100 / basePoint.value;
           s.norm = data.map(d => ({ time: d.time, value: Math.round((d.value * factor)*1000000)/1000000 }));
@@ -844,41 +943,6 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
       return { rows: dedup, header, idxDate, idxNav, delim, headerIndex };
     }
 
-    function applyNormalization(data, baseDateStr){
-      if (!normalizeEl.checked) return data;
-      // 厳密バリデーション + データ範囲チェック
-      const v = validateBaseDateWithinData(baseDateStr, data);
-      if (!v.ok) {
-        alert(v.msg);
-        appendStatus(v.msg);
-        return data; // 正規化は行わず、元データをそのまま表示
-      }
-      const baseTime = v.time; // null の場合は「最古日」を基準にする
-      const base = (() => {
-        if (baseTime) {
-          // 入力日の厳密一致を優先
-          const exact = data.find(d => d.time === baseTime);
-          if (exact) return exact;
-          // 前日までで最も近いデータ（同日が休場でも直前営業日を許容）
-          let prev = null;
-          for (const d of data) { if (d.time < baseTime) prev = d; else break; }
-          if (!prev) {
-            // ここには通常到達しない（validateで範囲外を弾いている）が安全のため保険
-            alert('その日付のデータは存在しません。');
-            appendStatus('その日付のデータは存在しません。');
-            return null;
-          }
-          return prev;
-        }
-        return data[0];
-      })();
-      if (!base) return data;
-      const factor = 100 / base.value;
-      return data.map(d => ({ time: d.time, value: Math.round((d.value * factor) * 1000000) / 1000000 }));
-    }
-
-    // function render(data) removed
-    // function formatDay(ts) removed
 
     // === デコーダ：Shift_JIS優先 ===
     async function decodePreferSjis(file){
@@ -999,9 +1063,29 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
 
     // ===== Apply normalization =====
     applyBtn.addEventListener('click', () => {
-      if (!seriesStore.length) { appendStatus('データがありません'); return; }
+        // 正規化ON時にデータ未読み込みならアラートしてOFFへ戻す
+        if (!seriesStore.length) {
+          appendStatus('データがありません');
+          if (normalizeEl.checked) {
+            alert('データが読み込まれていません。CSVを読み込んでから正規化を有効にしてください。');
+            normalizeEl.checked = false;
+          }
+          return;
+        }
       recomputeAndRenderAll();
     });
+
+    // ===== 基準日更新 =====
+    if (updateBaselineBtn) {
+      updateBaselineBtn.addEventListener('click', () => {
+        const baseStr = getBaseDateStr(); // baseY/baseM/baseD から YYYY-MM-DD を組み立て
+        if (!baseStr) {
+          alert('基準日が未入力です。YYYY / MM / DD を入力してください。');
+          return;
+        }
+        recomputeAndRenderAll();
+      });
+    }
 
     if (logScaleEl) {
       logScaleEl.addEventListener('change', updateScale);
@@ -1052,8 +1136,8 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
 </script>
   <!-- end script -->
   <footer style="text-align:center;margin-top:24px;font-size:12px;color:#9fb0c3;line-height:1.6;">
-    <div>created by GPT-5 Thinking with <a href="https://x.com/_hirotgr" target="_blank" style="color:#6aa0ff;text-decoration:none;">@_hirotgr</a></div>
-    <div>powered by <a href="https://jp.tradingview.com/lightweight-charts/" target="_blank" style="color:#6aa0ff;text-decoration:none;">Lightweight Charts™︎</a> (©TradingView) : License: Apache2.0 (see LICENSE and NOTICE on <a href="https://github.com/tradingview/lightweight-charts" target="_blank" style="color:#6aa0ff;text-decoration:none;">GitHub</a>)</div>
+    <div><a href="https://github.com/hirotgr/jfunds-nav-chart" target="_blank" style="color:#6aa0ff;text-decoration:none;">jfunds-nav-chart</a> version 0.1.1 : created by GPT-5 Thinking with <a href="https://x.com/_hirotgr" target="_blank" style="color:#6aa0ff;text-decoration:none;">@_hirotgr</a></div>
+    <div>powered by <a href="https://jp.tradingview.com/lightweight-charts/" target="_blank" style="color:#6aa0ff;text-decoration:none;">Lightweight Charts™︎ (©TradingView)</a>, License: Apache2.0 (see LICENSE and NOTICE on <a href="https://github.com/tradingview/lightweight-charts" target="_blank" style="color:#6aa0ff;text-decoration:none;">GitHub</a>)</div>
 
     <!-- Help Modal and Embedded README HTML -->
     <div id="helpModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
@@ -1235,6 +1319,7 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
           <li>OFF：元の価格をそのまま表示</li>
           <li>基準日が空：全シリーズに共通する最古日を基準とする</li>
           <li>基準日指定時：すべてのシリーズにその日付のデータが必要</li>
+          <li>正規化チェックボックスがONのまま基準日指定を変更した場合は、基準日更新ボタンを押す</li>
           <li>不正な日付（例: 2024-02-30）は自動エラー</li>
         </ul>
 
@@ -1279,6 +1364,7 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
         <h2>バージョン情報</h2>
         <ul>
           <li>2025/10/20 : version 0.1.0 : 初期リリース</li>
+          <li>2025/10/24 : version 0.1.1 : キャッシュ周りの不具合解消、マイナーな機能追加、ヘッダとフッタを少し変更</li>
         </ul>
       </div>
     </template>
