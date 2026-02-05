@@ -1,18 +1,16 @@
 
 # GitHub Pages
 
-* [https://hirotgr.github.io/jfunds-nav-chart/jfunds-nav-chart.html](https://hirotgr.github.io/jfunds-nav-chart/jfunds-nav-chart.html)
-  * サンプルCSVファイル: [ダウンロード](https://raw.githubusercontent.com/hirotgr/jfunds-nav-chart/main/sample-csv.zip)
+* https://hirotgr.github.io/jfunds-nav-chart/
 
 # ダウンロード
 
-このツールはローカルにダウンロードして使用可能することができます。
-
-* [jfunds-nav-chart.zip (サンプルCSV同梱)](https://raw.githubusercontent.com/hirotgr/jfunds-nav-chart/main/jfunds-nav-chart.zip)
+このツールはHTMLファイル単体で機能するSPA(Single Page Application)ですので「名前を付けて保存」などでローカルにダウンロードして使用することができます。 \
+`index.html` を `jfunds-nav-chart.html` などに名前を付けて保存してブラウザで開いてください。
 
 # 関連ツール
 
-* [jfunds-comparison](https://hirotgr.github.io/jfunds-comparison/jfunds-comparison.html) ([リポジトリ](https://github.com/hirotgr/jfunds-comparison))
+* [jfunds-comparison](https://hirotgr.github.io/jfunds-comparison/) ([リポジトリ](https://github.com/hirotgr/jfunds-comparison))
 
 # これは何？
 
@@ -37,7 +35,7 @@
 
 # 投資信託CSVデータの例
 
-投資信託のCSVデータは運用会社の各ファンドのページからダウンロードできます。以下はその例です。サンプルを **sample-csv.zip** としてこのページに置いてあります。
+投資信託のCSVデータは運用会社の各ファンドのページからダウンロードできます。以下はその例です。
 
 * [eMAXIS Slim 全世界株式](https://emaxis.am.mufg.jp/fund/253425.html): 設定来データ
 * [eMAXIS Slim S&P500](https://emaxis.am.mufg.jp/fund/253266.html): 設定来データ
