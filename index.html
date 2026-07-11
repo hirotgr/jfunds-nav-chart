@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>投資信託CSV比較</title>
-  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.7/dist/lightweight-charts.standalone.production.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600&display=swap" rel="stylesheet">
   <style>
     :root{ --bg:#0b0f14; --panel:#111720; --text:#e8eef6; --muted:#9fb0c3; --accent:#6aa0ff; }
@@ -37,8 +37,21 @@
       box-sizing:border-box;
       position:relative;       /* Lightweight Charts™︎の内部要素の基準 */
     }
+    .chart-title{ font-size:14px; font-weight:600; margin:0 0 8px 4px; }
+    #drawdown-section{ margin-top:12px; }
+    #drawdown-chart{
+      height:260px;
+      min-height:180px;
+      width:100%;
+      min-width:320px;
+      resize:vertical;
+      overflow:hidden;
+      padding-bottom:32px;
+      box-sizing:border-box;
+      position:relative;
+    }
     /* 軸ラベルがチャート内でクリップされないよう内部ラッパーのオーバーフローを可視にする */
-    #chart > div { overflow: visible !important; }
+    #chart > div, #drawdown-chart > div { overflow: visible !important; }
     .row{display:grid;grid-template-columns:1.1fr .9fr;gap:12px;align-items:start}
     @media (max-width:900px){.row{grid-template-columns:1fr}}
     .drop{border:1.5px dashed #2a3443;border-radius:10px;padding:10px 12px;text-align:center;background:#0f141c;cursor:pointer;display:block;transition:box-shadow .15s ease, border-color .15s ease; font-size:13px}
@@ -176,7 +189,12 @@
       </div>
     </div>
     <div id="legend" class="legend"></div>
+    <div id="price-chart-title" class="chart-title">基準価額</div>
     <div id="chart" class="panel"></div>
+    <section id="drawdown-section" hidden>
+      <div id="drawdown-title" class="chart-title">ドローダウン(%)</div>
+      <div id="drawdown-chart" class="panel"></div>
+    </section>
   </div>
   <script>
     const $ = (s)=>document.querySelector(s);
@@ -229,9 +247,23 @@
       if (baseDayEl) baseDayEl.value = '';
     }
 
+    function disableNormalization(){
+      if (normalizeEl) normalizeEl.checked = false;
+      clearBaseDateInputs();
+      clearLinkedTooltips();
+      setDrawdownVisibility(false);
+      sharedPriceScaleWidth = 0;
+      applySharedPriceScaleWidth(0);
+    }
+
     // 正規化トグル：ONなら未指定時に共通最古日を自動セット、OFFなら基準日を消去
     if (normalizeEl) {
       normalizeEl.addEventListener('change', () => {
+        if (!seriesStore.length) {
+          appendStatus('データがありません');
+          disableNormalization();
+          return;
+        }
         if (normalizeEl.checked) {
           const baseStr = getBaseDateStr();
           if (!baseStr) {
@@ -241,7 +273,7 @@
             }
           }
         } else {
-          clearBaseDateInputs();
+          disableNormalization();
         }
         recomputeAndRenderAll();
       });
@@ -273,9 +305,12 @@
         if (!s || !s.series) return;
         s.hidden = !s.hidden;
         try { s.series.applyOptions({ visible: !s.hidden }); } catch(e){}
+        try { s.drawdownSeries?.applyOptions({ visible: !s.hidden }); } catch(e){}
         updateLegendAll();
         chart.timeScale().fitContent();
+        if (normalizeEl.checked) drawdownChart.timeScale().fitContent();
         updateScale();
+        schedulePriceScaleAlignment();
         appendStatus(`${s.hidden ? '非表示' : '表示'}: ${s.label}`);
       });
     }
@@ -284,11 +319,14 @@
       if (index < 0 || index >= seriesStore.length) return;
       const s = seriesStore[index];
       try { if (s.series) chart.removeSeries(s.series); } catch(e) {}
+      try { if (s.drawdownSeries) drawdownChart.removeSeries(s.drawdownSeries); } catch(e) {}
       // メモリ上の参照を解放（GCの促進）
       if (s) {
         s.raw = [];
         s.norm = [];
+        s.drawdown = [];
         s.series = null;
+        s.drawdownSeries = null;
         s.hidden = undefined;
       }
       seriesStore.splice(index, 1);
@@ -296,6 +334,7 @@
       if (seriesStore.length) {
         recomputeAndRenderAll();
       } else {
+        disableNormalization();
         appendStatus('すべての系列が削除されました。');
       }
     }
@@ -370,10 +409,89 @@ const PALETTE = [
       },
       width: chartContainer.clientWidth, height: chartContainer.clientHeight,
     });
+    const drawdownSection = document.getElementById('drawdown-section');
+    const drawdownContainer = document.getElementById('drawdown-chart');
+    const drawdownChart = LightweightCharts.createChart(drawdownContainer, {
+      layout: { background: { type:'solid', color:'#111720' }, textColor:'#e8eef6', fontFamily:'Noto Sans JP, system-ui,-apple-system, Segoe UI, Roboto, Helvetica, Arial' },
+      rightPriceScale: { borderVisible:false, scaleMargins:{ top:0.08, bottom:0.08 } },
+      timeScale: { borderVisible:false, timeVisible:true, secondsVisible:false, rightOffset:8, fixLeftEdge:true, fixRightEdge:true, tickMarkFormatter: (t) => { if (t && typeof t === 'object' && 'year' in t) { const y=t.year; const m=String(t.month).padStart(2,'0'); const d=String(t.day).padStart(2,'0'); return `${y}/${m}/${d}`; } const dt=new Date(t*1000); const y=dt.getUTCFullYear(); const m=String(dt.getUTCMonth()+1).padStart(2,'0'); const d=String(dt.getUTCDate()).padStart(2,'0'); return `${y}/${m}/${d}`; }, minimumHeight:40 },
+      grid: { horzLines:{ visible:true, color:'rgba(255,255,255,0.05)' }, vertLines:{ visible:false } },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Magnet },
+      localization: {
+        priceFormatter: (p)=>String(Math.round(Number(p))),
+        timeFormatter: (t)=>{
+          if (typeof t === 'number') {
+            const d = new Date(t*1000);
+            return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+          }
+          if (t && typeof t === 'object' && 'year' in t) return `${t.year}-${String(t.month).padStart(2,'0')}-${String(t.day).padStart(2,'0')}`;
+          return String(t);
+        }
+      },
+      width: chartContainer.clientWidth,
+      height: drawdownContainer.clientHeight,
+    });
+
+    const DEFAULT_SHARED_PRICE_SCALE_WIDTH = 64;
+    let sharedPriceScaleWidth = 0;
+    let priceScaleAlignmentFrame = null;
+    function applySharedPriceScaleWidth(width){
+      chart.priceScale('right').applyOptions({ minimumWidth:width });
+      drawdownChart.priceScale('right').applyOptions({ minimumWidth:width });
+    }
+    function schedulePriceScaleAlignment(pass = 0){
+      if (priceScaleAlignmentFrame != null) cancelAnimationFrame(priceScaleAlignmentFrame);
+      if (!normalizeEl.checked || drawdownSection.hidden) {
+        priceScaleAlignmentFrame = null;
+        sharedPriceScaleWidth = 0;
+        applySharedPriceScaleWidth(0);
+        return;
+      }
+      priceScaleAlignmentFrame = requestAnimationFrame(() => {
+        priceScaleAlignmentFrame = null;
+        const measured = Math.ceil(Math.max(
+          DEFAULT_SHARED_PRICE_SCALE_WIDTH,
+          chart.priceScale('right').width(),
+          drawdownChart.priceScale('right').width()
+        ));
+        sharedPriceScaleWidth = Math.max(sharedPriceScaleWidth, measured);
+        applySharedPriceScaleWidth(sharedPriceScaleWidth);
+        if (pass < 1) schedulePriceScaleAlignment(pass + 1);
+      });
+    }
+
+    function setDrawdownVisibility(visible){
+      drawdownSection.hidden = !visible;
+      if (!visible) {
+        drawdownChart.clearCrosshairPosition();
+        schedulePriceScaleAlignment();
+        return;
+      }
+      const width = chartContainer.getBoundingClientRect().width;
+      drawdownContainer.style.width = `${width}px`;
+      drawdownChart.applyOptions({ width:drawdownContainer.clientWidth, height:drawdownContainer.clientHeight });
+      schedulePriceScaleAlignment();
+    }
+
+    let syncingVisibleRange = false;
+    function syncVisibleRange(source, target){
+      source.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (!range || syncingVisibleRange || !normalizeEl.checked) return;
+        syncingVisibleRange = true;
+        try { target.timeScale().setVisibleLogicalRange(range); }
+        finally { syncingVisibleRange = false; }
+      });
+    }
+    syncVisibleRange(chart, drawdownChart);
+    syncVisibleRange(drawdownChart, chart);
+
     // === Create tooltip container ===
     const tip = document.createElement('div');
     tip.className = 'lwc-tooltip';
     chartContainer.appendChild(tip);
+    const drawdownTip = document.createElement('div');
+    drawdownTip.className = 'lwc-tooltip';
+    drawdownContainer.appendChild(drawdownTip);
 
     function fmtPrice(v){
       try { return Number(v).toLocaleString('ja-JP'); } catch(_) { return String(v); }
@@ -396,9 +514,37 @@ const PALETTE = [
       tip.style.top  = top  + 'px';
     }
     function hideTip(){ tip.style.display = 'none'; }
+    function showDrawdownTip(x, y, html){
+      drawdownTip.innerHTML = html;
+      drawdownTip.style.display = 'block';
+      let left = x + 12;
+      let top = y + 12;
+      const cw = drawdownContainer.clientWidth;
+      const ch = drawdownContainer.clientHeight;
+      const tw = drawdownTip.offsetWidth || 160;
+      const th = drawdownTip.offsetHeight || 40;
+      if (left + tw > cw - 6) left = Math.max(6, cw - tw - 6);
+      if (top + th > ch - 6) top = Math.max(6, ch - th - 6);
+      drawdownTip.style.left = left + 'px';
+      drawdownTip.style.top = top + 'px';
+    }
+    function hideDrawdownTip(){ drawdownTip.style.display = 'none'; }
 
 
-new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, height: chartContainer.clientHeight })).observe(chartContainer);
+new ResizeObserver(()=>{
+  chart.applyOptions({ width: chartContainer.clientWidth, height: chartContainer.clientHeight });
+  if (!drawdownSection.hidden) {
+    drawdownContainer.style.width = `${chartContainer.getBoundingClientRect().width}px`;
+    drawdownChart.applyOptions({ width:drawdownContainer.clientWidth });
+  }
+  schedulePriceScaleAlignment();
+}).observe(chartContainer);
+new ResizeObserver(()=>{
+  if (!drawdownSection.hidden) {
+    drawdownChart.applyOptions({ width:drawdownContainer.clientWidth, height:drawdownContainer.clientHeight });
+    schedulePriceScaleAlignment();
+  }
+}).observe(drawdownContainer);
 
   // === Disable right-click context menu on chart area ===
   (function(){
@@ -421,15 +567,26 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
       try{
         // 1) チャートのスクリーンショット（系列・軸・グリッドを含む）
         const baseCanvas = chart.takeScreenshot(true, false); // addTopLayer=true, includeCrosshair=false
+        const includeDrawdown = normalizeEl.checked && !drawdownSection.hidden;
+        const drawdownCanvas = includeDrawdown ? drawdownChart.takeScreenshot(true, false) : null;
+        const drawdownHeaderHeight = drawdownCanvas ? 32 : 0;
 
         // 2) 凡例（HTML）は含まれないため、合成用キャンバスに描き足す
         const out = document.createElement('canvas');
-        out.width  = baseCanvas.width;
-        out.height = baseCanvas.height;
+        out.width  = Math.max(baseCanvas.width, drawdownCanvas?.width || 0);
+        out.height = baseCanvas.height + drawdownHeaderHeight + (drawdownCanvas?.height || 0);
         const ctx = out.getContext('2d');
 
         // チャート画像を貼る
+        ctx.fillStyle = '#111720';
+        ctx.fillRect(0, 0, out.width, out.height);
         ctx.drawImage(baseCanvas, 0, 0);
+        if (drawdownCanvas) {
+          ctx.fillStyle = '#e8eef6';
+          ctx.font = '600 14px "Noto Sans JP", sans-serif';
+          ctx.fillText('ドローダウン(%)', 12, baseCanvas.height + 21);
+          ctx.drawImage(drawdownCanvas, 0, baseCanvas.height + drawdownHeaderHeight);
+        }
         // 凡例を左上に描画（可視シリーズがあれば）
         if (seriesStore && seriesStore.some(ss => !ss.hidden)){
           const pad = 12;
@@ -544,6 +701,37 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
       });
     }
 
+    function ensureDrawdownSeriesObjectAt(index, color){
+      const item = seriesStore[index];
+      const hidden = !!item.hidden;
+      if (item.drawdownSeries) {
+        item.drawdownSeries.applyOptions({ color, visible: !hidden });
+        return;
+      }
+      item.drawdownSeries = drawdownChart.addLineSeries({
+        color,
+        visible: !hidden,
+        priceFormat:{
+          type:'custom',
+          minMove:1,
+          formatter:(value)=>String(Math.round(Number(value)))
+        },
+        lineWidth:2,
+        lastValueVisible:true,
+        priceLineVisible:false
+      });
+    }
+
+    function computeDrawdownData(data, baseline){
+      let runningPeak = null;
+      return data.map(d => {
+        if (Number(d.time) < Number(baseline)) return { time:d.time };
+        if (runningPeak === null || d.value > runningPeak) runningPeak = d.value;
+        const value = runningPeak > 0 ? ((d.value / runningPeak) - 1) * 100 : 0;
+        return { time:d.time, value:Math.round(value * 1000000) / 1000000 };
+      });
+    }
+
     function computeCommonBaselineTime(){
       // If normalize checkbox is off, no baseline needed
       if (!normalizeEl.checked) return null;
@@ -616,15 +804,6 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
 
     function recomputeAndRenderAll(){
       // === Recompute normalization baseline and reset all cached series ===
-      // キャッシュされた正規化データを強制的にクリアして再スケーリングを保証
-      for (const s of seriesStore) {
-        if (!s) continue;
-        s.norm = [];
-        if (s.series) {
-          try { s.series.setData([]); } catch(e){}
-        }
-      }
-
       // 目的: 正規化ONにした時に旧キャッシュを破棄し、全シリーズを共通基準で再スケール
       // これにより「正規化OFF→ON→ズレ発生」問題を防止
 
@@ -640,6 +819,21 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
           setBaseDateInputsFromTs(baseline);
         }
       }
+
+      // 基準日が有効だと確認できてから、キャッシュと描画データをクリアする。
+      // 入力エラー時は現在のチャートを維持する。
+      for (const s of seriesStore) {
+        if (!s) continue;
+        s.norm = [];
+        s.drawdown = [];
+        if (s.series) {
+          try { s.series.setData([]); } catch(e){}
+        }
+        if (s.drawdownSeries) {
+          try { s.drawdownSeries.setData([]); } catch(e){}
+        }
+      }
+      setDrawdownVisibility(normalizeEl.checked && typeof baseline === 'number');
     // === 正規化ライン（価格ライン） ===
     // 以前は別LineSeriesで水平線を描画していたが、描画順や可視レンジ依存で見えないことがあった。
     // 各シリーズに PriceLine を付与する方式へ変更（正規化ONで表示、OFFで除去）。
@@ -679,12 +873,35 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
         if (normalizeEl.checked && baseline){
           const basePoint = data.find(d => Number(d.time) === Number(baseline));
           if (!basePoint) { /* shouldn't happen due to pre-check */ continue; }
+          if (!Number.isFinite(basePoint.value) || basePoint.value <= 0) {
+            appendStatus(`正規化をスキップ: ${s.label} の基準日価額が不正です。`);
+            continue;
+          }
           const factor = 100 / basePoint.value;
           s.norm = data.map(d => ({ time: d.time, value: Math.round((d.value * factor)*1000000)/1000000 }));
           s.series.setData(s.norm);
+          ensureDrawdownSeriesObjectAt(seriesStore.indexOf(s), s.color);
+          s.drawdown = computeDrawdownData(data, baseline);
+          s.drawdownSeries.setData(s.drawdown);
+          if (!s._drawdownZeroLine) {
+            try {
+              s._drawdownZeroLine = s.drawdownSeries.createPriceLine({
+                price:0,
+                color:'rgba(255,255,255,0.45)',
+                lineStyle:LightweightCharts.LineStyle.Dotted,
+                lineWidth:1,
+                axisLabelVisible:false,
+                title:''
+              });
+            } catch(e){}
+          }
         } else if (normalizeEl.checked && baseline === null) {
           // normalize to each series' oldest (checkbox on but no baseline chosen)
           const base = data[0];
+          if (!base || !Number.isFinite(base.value) || base.value <= 0) {
+            appendStatus(`正規化をスキップ: ${s.label} の基準日価額が不正です。`);
+            continue;
+          }
           const factor = 100 / base.value;
           s.norm = data.map(d => ({ time: d.time, value: Math.round((d.value * factor)*1000000)/1000000 }));
           s.series.setData(s.norm);
@@ -695,7 +912,9 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
       // Legend refresh and autoscale
       updateLegendAll();
       chart.timeScale().fitContent();
+      if (normalizeEl.checked && typeof baseline === 'number') drawdownChart.timeScale().fitContent();
       updateScale();
+      schedulePriceScaleAlignment();
     }
 
     function upsertSeries(label, rows){
@@ -706,7 +925,7 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
           alert(`読み込み可能なシリーズは最大 ${MAX_SERIES} 件までです。`);
           return false;
         }
-        seriesStore.push({ label, color: allocateColor(-1), series: null, hidden: false, raw: [], norm: [] });
+        seriesStore.push({ label, color: allocateColor(-1), series: null, drawdownSeries: null, hidden: false, raw: [], norm: [], drawdown: [] });
         idx = seriesStore.length - 1;
       }
       const color = allocateColor(idx);
@@ -742,35 +961,272 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
         : LightweightCharts.PriceScaleMode.Normal;
       // Apply to the chart's right price scale (series attaches to 'right' by default)
       chart.priceScale('right').applyOptions({ mode });
+      schedulePriceScaleAlignment();
     }
     updateScale();
 
 
     // === Crosshair tooltip logic ===
-    chart.subscribeCrosshairMove((param) => {
-      if (!param || !param.point || param.time === undefined || param.time === null) {
-        hideTip();
-        return;
+    let syncingCrosshair = false;
+    function lowerBoundTime(data, targetTime, start = 0, end = data?.length || 0){
+      let lo = start;
+      let hi = end;
+      while (lo < hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (Number(data[mid].time) < targetTime) lo = mid + 1;
+        else hi = mid;
       }
-      const { x, y } = param.point;
-      // その時刻にデータがあるシリーズのみ抽出（非表示は除外）
-      const rows = [];
-      if (seriesStore && param.seriesData && typeof param.seriesData.get === 'function'){
-        for (const s of seriesStore){
-          if (!s || s.hidden || !s.series) continue;
-          const d = param.seriesData.get(s.series);
-          if (!d) continue;              // その時刻にデータがない
-          const v = d.value ?? d.close ?? d.open ?? d.high ?? d.low; // lineなら value
-          if (v == null) continue;
-          rows.push(`<div class="row"><span class="sw" style="background:${s.color}"></span><span class="val">${fmtPrice(v)}</span></div>`);
+      return lo;
+    }
+
+    function firstFiniteValueIndex(data){
+      if (!data?.length) return -1;
+      let lo = 0;
+      let hi = data.length;
+      // ドローダウンデータは基準日前だけvalueなし、その後はvalueありで並ぶ。
+      while (lo < hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (Number.isFinite(data[mid].value)) hi = mid;
+        else lo = mid + 1;
+      }
+      return lo < data.length && Number.isFinite(data[lo].value) ? lo : -1;
+    }
+
+    function pointAtTime(data, time){
+      const targetTime = Number(time);
+      if (!data?.length || !Number.isFinite(targetTime)) return null;
+      const index = lowerBoundTime(data, targetTime);
+      const point = data[index];
+      return point && Number(point.time) === targetTime && Number.isFinite(point.value) ? point : null;
+    }
+
+    function buildTooltipData(time, kind){
+      const entries = [];
+      for (const s of seriesStore) {
+        if (!s || s.hidden) continue;
+        const data = kind === 'drawdown' ? s.drawdown : (normalizeEl.checked ? s.norm : s.raw);
+        const series = kind === 'drawdown' ? s.drawdownSeries : s.series;
+        if (!series) continue;
+        const point = pointAtTime(data, time);
+        if (!point) continue;
+        const value = kind === 'drawdown' ? Number(point.value).toFixed(1) : fmtPrice(point.value);
+        entries.push({
+          html:`<div class="row"><span class="sw" style="background:${s.color}"></span><span class="val">${value}</span></div>`,
+          point,
+          series
+        });
+      }
+      return entries;
+    }
+
+    function renderPriceTooltipAtTime(time, position){
+      const entries = buildTooltipData(time, 'price');
+      if (!entries.length) { hideTip(); return false; }
+      const x = position?.x ?? chart.timeScale().timeToCoordinate(time);
+      const y = position?.y ?? entries[0].series.priceToCoordinate(entries[0].point.value);
+      if (x == null || y == null) { hideTip(); return false; }
+      showTip(x, y, entries.map(e => e.html).join(''));
+      return true;
+    }
+
+    function renderDrawdownTooltipAtTime(time, position){
+      const entries = buildTooltipData(time, 'drawdown');
+      if (!entries.length) { hideDrawdownTip(); return false; }
+      const x = position?.x ?? drawdownChart.timeScale().timeToCoordinate(time);
+      const y = position?.y ?? entries[0].series.priceToCoordinate(entries[0].point.value);
+      if (x == null || y == null) { hideDrawdownTip(); return false; }
+      showDrawdownTip(x, y, entries.map(e => e.html).join(''));
+      return true;
+    }
+
+    function timeToTimestamp(time){
+      if (typeof time === 'number' && Number.isFinite(time)) return time;
+      if (time && typeof time === 'object' && Number.isFinite(time.year) && Number.isFinite(time.month) && Number.isFinite(time.day)) {
+        return Math.floor(Date.UTC(time.year, time.month - 1, time.day) / 1000);
+      }
+      return null;
+    }
+
+    function nearestPointInData(data, targetTime){
+      if (!data?.length || !Number.isFinite(targetTime)) return null;
+      const first = firstFiniteValueIndex(data);
+      if (first < 0) return null;
+      let last = data.length - 1;
+      while (last >= first && !Number.isFinite(data[last].value)) last--;
+      if (first > last || targetTime < Number(data[first].time) || targetTime > Number(data[last].time)) return null;
+
+      const rightIndex = lowerBoundTime(data, targetTime, first, last + 1);
+      const right = data[Math.min(rightIndex, last)];
+      const left = rightIndex > first ? data[rightIndex - 1] : null;
+      if (!left) return right;
+      return Math.abs(Number(left.time) - targetTime) <= Math.abs(Number(right.time) - targetTime) ? left : right;
+    }
+
+    function findNearestTime(targetTime, kind){
+      let nearest = null;
+      let nearestDistance = Infinity;
+      for (const s of seriesStore) {
+        if (!s || s.hidden) continue;
+        const data = kind === 'drawdown' ? s.drawdown : (normalizeEl.checked ? s.norm : s.raw);
+        const point = nearestPointInData(data, targetTime);
+        if (!point) continue;
+        const distance = Math.abs(Number(point.time) - targetTime);
+        if (distance < nearestDistance) {
+          nearest = Number(point.time);
+          nearestDistance = distance;
         }
       }
-      if (!rows.length){ hideTip(); return; }
-      showTip(x, y, rows.join(''));
+      return nearest;
+    }
+
+    function syncCrosshairTo(kind, time){
+      const target = seriesStore.find(s => {
+        if (!s || s.hidden) return false;
+        const data = kind === 'drawdown' ? s.drawdown : (normalizeEl.checked ? s.norm : s.raw);
+        const series = kind === 'drawdown' ? s.drawdownSeries : s.series;
+        return !!series && !!pointAtTime(data, time);
+      });
+      if (!target) {
+        syncingCrosshair = true;
+        try { (kind === 'drawdown' ? drawdownChart : chart).clearCrosshairPosition(); }
+        finally { syncingCrosshair = false; }
+        return;
+      }
+      const data = kind === 'drawdown' ? target.drawdown : (normalizeEl.checked ? target.norm : target.raw);
+      const series = kind === 'drawdown' ? target.drawdownSeries : target.series;
+      const point = pointAtTime(data, time);
+      syncingCrosshair = true;
+      try {
+        (kind === 'drawdown' ? drawdownChart : chart).setCrosshairPosition(point.value, time, series);
+      } catch(e) {
+        // リサイズ直後など、座標がまだ確定していないフレームでは次のmousemoveに任せる。
+      } finally {
+        syncingCrosshair = false;
+      }
+    }
+
+    const mouseMoveFrames = { price:null, drawdown:null };
+    let activeMouseKind = null;
+    function getMousePositions(container, event){
+      const rect = container.getBoundingClientRect();
+      const styles = getComputedStyle(container);
+      const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+      const paddingTop = parseFloat(styles.paddingTop) || 0;
+      const tooltipPosition = {
+        x:event.clientX - rect.left,
+        y:event.clientY - rect.top
+      };
+      return {
+        tooltipPosition,
+        chartPosition:{
+          x:tooltipPosition.x - paddingLeft,
+          y:tooltipPosition.y - paddingTop
+        }
+      };
+    }
+
+    function handleChartMouseMove(kind, event){
+      activeMouseKind = kind;
+      const container = kind === 'drawdown' ? drawdownContainer : chartContainer;
+      const sourceChart = kind === 'drawdown' ? drawdownChart : chart;
+      const { tooltipPosition, chartPosition } = getMousePositions(container, event);
+      if (mouseMoveFrames[kind] != null) cancelAnimationFrame(mouseMoveFrames[kind]);
+      mouseMoveFrames[kind] = requestAnimationFrame(() => {
+        mouseMoveFrames[kind] = null;
+        const paneWidth = sourceChart.paneSize().width;
+        if (chartPosition.x < 0 || chartPosition.x > paneWidth) {
+          hideTip();
+          hideDrawdownTip();
+          return;
+        }
+        const approximateTime = timeToTimestamp(sourceChart.timeScale().coordinateToTime(chartPosition.x));
+        const time = findNearestTime(approximateTime, kind);
+        if (time == null) {
+          hideTip();
+          hideDrawdownTip();
+          return;
+        }
+        updateLinkedCharts(kind, time, tooltipPosition);
+      });
+    }
+
+    function updateLinkedCharts(sourceKind, time, sourcePosition){
+      const timestamp = timeToTimestamp(time);
+      if (timestamp == null) {
+        hideTip();
+        hideDrawdownTip();
+        return false;
+      }
+
+      if (sourceKind === 'drawdown') {
+        if (!normalizeEl.checked || !renderDrawdownTooltipAtTime(timestamp, sourcePosition)) {
+          hideTip();
+          return false;
+        }
+        renderPriceTooltipAtTime(timestamp);
+        syncCrosshairTo('price', timestamp);
+        return true;
+      }
+
+      if (!renderPriceTooltipAtTime(timestamp, sourcePosition)) {
+        hideDrawdownTip();
+        return false;
+      }
+      if (normalizeEl.checked) {
+        renderDrawdownTooltipAtTime(timestamp);
+        syncCrosshairTo('drawdown', timestamp);
+      } else {
+        hideDrawdownTip();
+      }
+      return true;
+    }
+
+    function clearLinkedTooltips(){
+      for (const kind of ['price', 'drawdown']) {
+        if (mouseMoveFrames[kind] != null) cancelAnimationFrame(mouseMoveFrames[kind]);
+        mouseMoveFrames[kind] = null;
+      }
+      hideTip();
+      hideDrawdownTip();
+      activeMouseKind = null;
+      syncingCrosshair = true;
+      try {
+        chart.clearCrosshairPosition();
+        drawdownChart.clearCrosshairPosition();
+      } finally {
+        syncingCrosshair = false;
+      }
+    }
+
+    chart.subscribeCrosshairMove((param) => {
+      if (syncingCrosshair || activeMouseKind === 'price') return;
+      if (!param || !param.point || param.time === undefined || param.time === null) {
+        clearLinkedTooltips();
+        return;
+      }
+      updateLinkedCharts('price', param.time, param.point);
     });
 
-    // マウスがチャート外に出たら隠す
-    chartContainer.addEventListener('mouseleave', hideTip);
+    drawdownChart.subscribeCrosshairMove((param) => {
+      if (syncingCrosshair || activeMouseKind === 'drawdown') return;
+      if (!param || !param.point || param.time === undefined || param.time === null) {
+        clearLinkedTooltips();
+        return;
+      }
+      updateLinkedCharts('drawdown', param.time, param.point);
+    });
+
+    // マウス操作はクロスヘアのクリック状態に依存せず、mousemoveで明示的に更新する。
+    chartContainer.addEventListener('mouseenter', () => { activeMouseKind = 'price'; }, { passive:true });
+    drawdownContainer.addEventListener('mouseenter', () => { activeMouseKind = 'drawdown'; }, { passive:true });
+    chartContainer.addEventListener('mousemove', (event) => handleChartMouseMove('price', event), { passive:true });
+    drawdownContainer.addEventListener('mousemove', (event) => handleChartMouseMove('drawdown', event), { passive:true });
+    chartContainer.addEventListener('mouseleave', clearLinkedTooltips);
+    drawdownContainer.addEventListener('mouseleave', clearLinkedTooltips);
+    document.addEventListener('mousemove', (event) => {
+      if (chartContainer.contains(event.target) || drawdownContainer.contains(event.target)) return;
+      if (tip.style.display === 'block' || drawdownTip.style.display === 'block') clearLinkedTooltips();
+    }, { passive:true });
 
 
     // --- helpers ---
@@ -795,25 +1251,19 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
       // 1) 日本語: YYYY年M月D日（スペース有無OK）
       let m = t.match(/^(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?$/);
       if (m) {
-        const y = +m[1], mo = +m[2], d = +m[3];
-        const date = new Date(Date.UTC(y, mo - 1, d, 0, 0, 0));
-        return Number.isFinite(date.getTime()) ? Math.floor(date.getTime()/1000) : null;
+        return parseYMDStrictToUTCSeconds(m[1], m[2], m[3]);
       }
 
       // 2) 数字のみ: YYYYMMDD
       m = t.match(/^(\d{4})(\d{2})(\d{2})$/);
       if(m){
-        const y = +m[1], mo = +m[2], d = +m[3];
-        const date = new Date(Date.UTC(y, mo-1, d, 0, 0, 0));
-        return Math.floor(date.getTime()/1000);
+        return parseYMDStrictToUTCSeconds(m[1], m[2], m[3]);
       }
 
       // 3) 区切り: YYYY-MM-DD / YYYY/MM/DD / YYYY.M.D (+ optional time/tz)
       m = t.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?(?:([+\-]\d{2}:?\d{2}|Z))?$/);
       if(m){
-        const y = +m[1], mo = +m[2], d = +m[3];
-        const date = new Date(Date.UTC(y, mo-1, d, 0, 0, 0));
-        return Math.floor(date.getTime()/1000);
+        return parseYMDStrictToUTCSeconds(m[1], m[2], m[3]);
       }
 
       // 4) 最後の手段: ブラウザのDateパーサ（環境依存）
@@ -914,9 +1364,10 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
             const line = toHalfWidth(lines[i]);
             const cols = splitRespectingQuotes(line, delim);
             if (cols.length <= j) continue;
-            const norm = toHalfWidth(String((cols[j]||'')));
-            const v = Number(norm.replace(/[\s,円]/g,''));
-            if (!isNaN(v)) numericCount++;
+            const rawValue = toHalfWidth(String(cols[j] ?? '')).replace(/["']/g,'').replace(/[\s,円]/g,'');
+            if (!rawValue) continue;
+            const v = Number(rawValue);
+            if (Number.isFinite(v) && v > 0) numericCount++;
             checked++;
           }
           if (checked>0 && numericCount/checked >= 0.6) { idxNav = j; break; }
@@ -931,8 +1382,9 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
         if (cols.length <= Math.max(idxDate, idxNav)) continue;
         const t = parseDateToUTCSeconds(cols[idxDate]);
         const raw = toHalfWidth(String(cols[idxNav])).replace(/["']/g,'').replace(/[\s,円]/g,'');
+        if (!raw) continue;
         const v = Number(raw);
-        if (!t || !isFinite(v)) continue;
+        if (!t || !Number.isFinite(v) || v <= 0) continue;
         rows.push({ time: t, value: v });
       }
       rows.sort((a,b)=>a.time-b.time);
@@ -1013,7 +1465,7 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
             setBaseDateInputsFromTs(tCommon);
           } else {
             appendStatus('注意: 全てのシリーズに共通する日付がありません。正規化を一時的にOFFにして描画します。');
-            normalizeEl.checked = false;
+            disableNormalization();
           }
         }
 
@@ -1059,7 +1511,14 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
     });
 
     // ===== Click/select =====
-    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+    fileInput.addEventListener('change', async (e) => {
+      const input = e.currentTarget;
+      try {
+        await handleFiles(input.files);
+      } finally {
+        input.value = '';
+      }
+    });
 
     // ===== Apply normalization =====
     applyBtn.addEventListener('click', () => {
@@ -1068,8 +1527,8 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
           appendStatus('データがありません');
           if (normalizeEl.checked) {
             alert('データが読み込まれていません。CSVを読み込んでから正規化を有効にしてください。');
-            normalizeEl.checked = false;
           }
+          disableNormalization();
           return;
         }
       recomputeAndRenderAll();
@@ -1089,12 +1548,6 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
 
     if (logScaleEl) {
       logScaleEl.addEventListener('change', updateScale);
-    }
-    if (normalizeEl) {
-      normalizeEl.addEventListener('change', () => {
-        if (!seriesStore.length) { appendStatus('データがありません'); return; }
-        recomputeAndRenderAll();
-      });
     }
     if (savePngBtn) {
       savePngBtn.addEventListener('click', saveChartAsPNG);
@@ -1136,7 +1589,7 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
 </script>
   <!-- end script -->
   <footer style="text-align:center;margin-top:24px;font-size:12px;color:#9fb0c3;line-height:1.6;">
-    <div><a href="https://github.com/hirotgr/jfunds-nav-chart" target="_blank" style="color:#6aa0ff;text-decoration:none;">jfunds-nav-chart</a> version 0.1.3 : created by GPT-5 Thinking with <a href="https://x.com/_hirotgr" target="_blank" style="color:#6aa0ff;text-decoration:none;">@_hirotgr</a></div>
+    <div><a href="https://github.com/hirotgr/jfunds-nav-chart" target="_blank" style="color:#6aa0ff;text-decoration:none;">jfunds-nav-chart</a> version 0.2.0 : created by GPT-5 Thinking and updated by GPT 5.6 Sol with <a href="https://x.com/_hirotgr" target="_blank" style="color:#6aa0ff;text-decoration:none;">@_hirotgr</a></div>
     <div>powered by <a href="https://jp.tradingview.com/lightweight-charts/" target="_blank" style="color:#6aa0ff;text-decoration:none;">Lightweight Charts™︎ (©TradingView)</a>, License: Apache2.0 (see LICENSE and NOTICE on <a href="https://github.com/tradingview/lightweight-charts" target="_blank" style="color:#6aa0ff;text-decoration:none;">GitHub</a>)</div>
 
     <!-- Help Modal and Embedded README HTML -->
@@ -1161,7 +1614,7 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
               <li><a href="https://github.com/tradingview/lightweight-charts" target="_blank">https://github.com/tradingview/lightweight-charts</a></li>
             </ul>
           </li>
-          <li><strong>Lightweight Charts™︎</strong>ライブラリ取得のために CDN(<a href="https://cdn.jsdelivr.net/" target="_blank">https://cdn.jsdelivr.net/</a>)への接続性が必要です</li>
+          <li><strong>Lightweight Charts™︎ 4.1.7</strong>ライブラリ取得のために CDN(<a href="https://cdn.jsdelivr.net/" target="_blank">https://cdn.jsdelivr.net/</a>)への接続性が必要です</li>
           <li>Googleのフォントライブラリ(<a href="https://fonts.googleapis.com" target="_blank">https://fonts.googleapis.com</a>)への接続性が必要です。</li>
           <li>GoogleとAdobeが共同開発し、Googleから提供されている Noto Sans JP フォントを使用しています。ライセンスはSIL Open Font License 1.1です。詳しくは以下を参照してください。</li>
             <ul>
@@ -1204,6 +1657,7 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
             <tr><td>保存</td><td>PNG画像保存（凡例付き）</td></tr>
             <tr><td>凡例操作</td><td>クリックで表示/非表示切替、削除ボタンで削除</td></tr>
             <tr><td>正規化</td><td>基準日を100としてスケーリング</td></tr>
+            <tr><td>ドローダウン</td><td>正規化中、基準日以降の累積最高値からの下落率を表示</td></tr>
             <tr><td>対数スケール</td><td>対数チャート表示対応</td></tr>
             <tr><td>その他</td><td>チャート右下のつまみでリサイズ可能</td></tr>
           </tbody>
@@ -1239,6 +1693,8 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
         <h3>チャート領域</h3>
         <ul>
           <li>マウスホイールやドラッグでズーム・パンが可能</li>
+          <li>正規化中はドローダウンチャートを表示し、価額チャートと表示期間・クロスヘアを同期</li>
+          <li>ドローダウンチャートの右下のつまみでは高さだけを変更可能</li>
           <li>右クリックは無効（「PNG保存」を使用）</li>
         </ul>
 
@@ -1308,6 +1764,7 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
           <li>CSVファイルを選択またはドラッグ＆ドロップ（最大10）</li>
           <li>ステータス欄に解析が出力され、チャートが描画されます</li>
           <li>正規化ON：基準日を100として比較（空欄なら共通最古日を自動採用）</li>
+          <li>正規化ONの間は、同じ基準日から計算したドローダウンを下段に表示</li>
           <li>対数チャートON：Y軸が対数に</li>
           <li>凡例：クリックで表示/非表示、削除ボタンで削除</li>
           <li>PNG保存：チャート＋軸＋グリッド＋可視シリーズ凡例を合成して保存</li>
@@ -1323,10 +1780,19 @@ new ResizeObserver(()=>chart.applyOptions({ width: chartContainer.clientWidth, h
           <li>不正な日付（例: 2024-02-30）は自動エラー</li>
         </ul>
 
+        <h2>ドローダウンのルール</h2>
+        <ul>
+          <li>正規化がONの間だけ表示</li>
+          <li>基準日を0として、基準日以降の累積最高値に対する下落率を計算</li>
+          <li>基準日前は計算・ライン描画を行わない</li>
+          <li>Y軸はパーセント値を整数で表示（%記号は省略）</li>
+          <li>凡例で非表示または削除した系列は、ドローダウンチャートにも表示しない</li>
+        </ul>
+
         <h2>PNG保存と右クリック</h2>
         <ul>
           <li>右クリックの保存/コピーは無効</li>
-          <li>PNG保存ボタンで画像化（軸・グリッド・系列すべて、可視シリーズの凡例のみ合成）</li>
+          <li>PNG保存ボタンで画像化（正規化中は価額とドローダウンを縦に結合し、可視シリーズの凡例のみ合成）</li>
         </ul>
 
         <h2>ステータスログ</h2>
